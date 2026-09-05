@@ -1,0 +1,129 @@
+// malulu.ai — Typography mixins
+// All display-level headings use Inter 700 + negative letter-spacing per design.md
+
+@mixin display-xl {
+  font-family: var(--font-sans);
+  font-size: var(--text-display-xl-size);
+  font-weight: var(--text-display-xl-weight);
+  line-height: var(--text-display-xl-lh);
+  letter-spacing: var(--text-display-xl-ls);
+  color: var(--on-dark);
+}
+
+@mixin display-lg {
+  font-family: var(--font-sans);
+  font-size: var(--text-display-lg-size);
+  font-weight: var(--text-display-lg-weight);
+  line-height: var(--text-display-lg-lh);
+  letter-spacing: var(--text-display-lg-ls);
+  color: var(--on-dark);
+}
+
+@mixin display-md {
+  font-family: var(--font-sans);
+  font-size: var(--text-display-md-size);
+  font-weight: var(--text-display-md-weight);
+  line-height: var(--text-display-md-lh);
+  letter-spacing: var(--text-display-md-ls);
+  color: var(--on-dark);
+}
+
+@mixin display-sm {
+  font-family: var(--font-sans);
+  font-size: var(--text-display-sm-size);
+  font-weight: var(--text-display-sm-weight);
+  line-height: var(--text-display-sm-lh);
+  letter-spacing: var(--text-display-sm-ls);
+  color: var(--on-dark);
+}
+
+@mixin title-lg {
+  font-family: var(--font-sans);
+  font-size: var(--text-title-lg-size);
+  font-weight: var(--text-title-lg-weight);
+  line-height: var(--text-title-lg-lh);
+  letter-spacing: var(--text-title-lg-ls);
+  color: var(--on-dark);
+}
+
+@mixin title-md {
+  font-family: var(--font-sans);
+  font-size: var(--text-title-md-size);
+  font-weight: var(--text-title-md-weight);
+  line-height: var(--text-title-md-lh);
+  letter-spacing: var(--text-title-md-ls);
+  color: var(--on-dark);
+}
+
+@mixin title-sm {
+  font-family: var(--font-sans);
+  font-size: var(--text-title-sm-size);
+  font-weight: var(--text-title-sm-weight);
+  line-height: var(--text-title-sm-lh);
+  letter-spacing: var(--text-title-sm-ls);
+  color: var(--on-dark);
+}
+
+@mixin stat-display {
+  font-family: var(--font-sans);
+  font-size: var(--text-stat-size);
+  font-weight: var(--text-stat-weight);
+  line-height: var(--text-stat-lh);
+  letter-spacing: var(--text-stat-ls);
+  color: var(--primary);
+}
+
+@mixin body-md {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-md-size);
+  font-weight: var(--text-body-md-weight);
+  line-height: var(--text-body-md-lh);
+  color: var(--body);
+}
+
+@mixin body-sm {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-sm-size);
+  font-weight: var(--text-body-sm-weight);
+  line-height: var(--text-body-sm-lh);
+  color: var(--body);
+}
+
+@mixin caption {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption-size);
+  font-weight: var(--text-caption-weight);
+  line-height: var(--text-caption-lh);
+  color: var(--muted);
+}
+
+@mixin caption-uppercase {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption-uc-size);
+  font-weight: var(--text-caption-uc-weight);
+  line-height: var(--text-caption-uc-lh);
+  letter-spacing: var(--text-caption-uc-ls);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+@mixin code {
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  font-weight: var(--text-code-weight);
+  line-height: var(--text-code-lh);
+}
+
+@mixin button-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-button-size);
+  font-weight: var(--text-button-weight);
+  line-height: var(--text-button-lh);
+}
+
+@mixin nav-link {
+  font-family: var(--font-sans);
+  font-size: var(--text-nav-size);
+  font-weight: var(--text-nav-weight);
+  line-height: var(--text-nav-lh);
+}

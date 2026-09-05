@@ -1,0 +1,245 @@
+// malulu.ai — shared atomic component styles
+// Import from individual Vue components with @use or rely on index.scss
+
+// ── Hairline divider ──────────────────────────────────────────────────────────
+.divider {
+  height: 1px;
+  background: var(--hairline);
+  border: none;
+  margin: 0;
+}
+
+.divider--strong {
+  background: var(--hairline-strong);
+}
+
+// ── Scrollable panel ──────────────────────────────────────────────────────────
+.scrollable {
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  &::-webkit-scrollbar        { width: 4px; height: 4px; }
+  &::-webkit-scrollbar-track  { background: transparent; }
+  &::-webkit-scrollbar-thumb  { background: var(--hairline-strong); border-radius: 2px; }
+  &::-webkit-scrollbar-thumb:hover { background: var(--muted-soft); }
+}
+
+// ── Section labels (caption-uppercase) ───────────────────────────────────────
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-xxl) var(--space-lg);
+  text-align: center;
+  color: var(--muted);
+
+  &__icon {
+    color: var(--hairline-strong);
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--on-dark);
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 13px;
+    max-width: 320px;
+  }
+}
+
+// ── Loading spinner row ───────────────────────────────────────────────────────
+.loading-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-xxl) var(--space-lg);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+// ── Form section ──────────────────────────────────────────────────────────────
+.form-section {
+  margin-bottom: var(--space-xl);
+
+  &:last-of-type { margin-bottom: 0; }
+}
+
+.form-section__title {
+  margin: 0 0 var(--space-md);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--hairline);
+}
+
+// ── Field grid ────────────────────────────────────────────────────────────────
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--space-md);
+}
+
+// ── Masked key ────────────────────────────────────────────────────────────────
+.masked-key {
+  margin-left: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+// ── Field hint / error ────────────────────────────────────────────────────────
+.field-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field-error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--accent-rose);
+}
+
+// ── Dot chrome (code window top bar) ─────────────────────────────────────────
+.dot-chrome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  &__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--hairline-strong);
+  }
+}
+
+// ── Tag badge pill ────────────────────────────────────────────────────────────
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+
+  &--dark {
+    background: var(--surface-elevated);
+    color: var(--muted);
+    border: 1px solid var(--hairline);
+  }
+
+  &--yellow {
+    background: var(--primary);
+    color: var(--on-primary);
+  }
+
+  &--emerald {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--accent-emerald);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+  }
+}
+
+// ── Studio card / panel primitives ───────────────────────────────────────────
+.studio-card {
+  background: var(--surface-card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 2px rgba(16, 32, 51, 0.03);
+}
+
+.studio-card--raised {
+  background: var(--surface-raised);
+  box-shadow: 0 12px 28px rgba(16, 32, 51, 0.06);
+}
+
+.studio-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 48px;
+  padding: 0 var(--space-md);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.studio-panel-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--body-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.studio-grid {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.studio-grid--cards {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.studio-grid--metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+
+  @media (max-width: 980px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.studio-metric {
+  padding: var(--space-md);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+}
+
+.studio-metric__label {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.studio-metric__value {
+  display: block;
+  margin-top: 4px;
+  color: var(--on-dark);
+  font-size: 28px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.studio-metric__hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted-soft);
+  font-size: 11px;
+}

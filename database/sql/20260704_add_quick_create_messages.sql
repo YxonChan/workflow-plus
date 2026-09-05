@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS `quick_create_messages` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'users.id',
+  `mode` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'video' COMMENT 'image|video',
+  `prompt` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `model_config_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'model_configs.id，0=用户默认模型',
+  `asset_refs_json` json DEFAULT NULL COMMENT '@引用的资产与上传文件',
+  `options_json` json DEFAULT NULL COMMENT '比例/分辨率/时长/条数/声音等参数',
+  `status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'queued' COMMENT 'queued|running|success|failed',
+  `result_urls_json` json DEFAULT NULL COMMENT '生成结果 URL 列表',
+  `error_message` varchar(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `ai_request_log_id` bigint unsigned DEFAULT NULL COMMENT 'ai_request_logs.id（最后一次请求）',
+  `attempts` int unsigned NOT NULL DEFAULT '0',
+  `started_at` datetime DEFAULT NULL,
+  `finished_at` datetime DEFAULT NULL,
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_quick_create_user` (`user_id`,`id`),
+  KEY `idx_quick_create_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='灵感速创对话消息（对话式快速生成）';

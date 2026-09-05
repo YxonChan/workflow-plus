@@ -1,0 +1,1151 @@
+// Element Plus theme variable overrides
+// Applied globally via vite.config.ts additionalData → every SCSS file
+
+// ── Theme token overrides for Element Plus ───────────────────────────────
+:root, html {
+  color-scheme: dark;
+
+  // Backgrounds
+  --el-bg-color:          var(--surface-card);
+  --el-bg-color-page:     var(--canvas);
+  --el-bg-color-overlay:  var(--surface-elevated);
+
+  // Text
+  --el-text-color-primary:     var(--on-dark);
+  --el-text-color-regular:     var(--body);
+  --el-text-color-secondary:   var(--muted);
+  --el-text-color-placeholder: var(--muted-soft);
+  --el-text-color-disabled:    var(--primary-disabled);
+
+  // Borders
+  --el-border-color:             var(--hairline);
+  --el-border-color-light:       var(--hairline);
+  --el-border-color-lighter:     var(--hairline);
+  --el-border-color-extra-light: var(--hairline);
+  --el-border-color-dark:        var(--hairline-strong);
+  --el-border-color-darker:      var(--hairline-strong);
+
+  // Fill
+  --el-fill-color:         var(--surface-soft);
+  --el-fill-color-light:   var(--surface-soft);
+  --el-fill-color-lighter: var(--surface-soft);
+  --el-fill-color-blank:   var(--surface-card);
+  --el-fill-color-dark:    var(--surface-raised);
+  --el-fill-color-darker:  var(--surface-elevated);
+
+  // Primary — indigo neon on dark
+  --el-color-primary:        var(--primary);
+  --el-color-primary-light-3:#6366f1;
+  --el-color-primary-light-5:#4f46e5;
+  --el-color-primary-light-7:#4338ca;
+  --el-color-primary-light-8:rgba(var(--primary-rgb), 0.16);
+  --el-color-primary-light-9: rgba(var(--primary-rgb), 0.1);
+  --el-color-primary-dark-2: #a5b4fc;
+
+  // Border radius
+  --el-border-radius-base:  8px;
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 20px;
+
+  // Component heights
+  --el-component-size:       40px;
+  --el-component-size-medium:36px;
+  --el-component-size-small: 32px;
+  --el-component-size-mini:  28px;
+
+  // Overlay mask
+  --el-overlay-color:         rgba(2, 6, 23, 0.72);
+  --el-overlay-color-light:   rgba(2, 6, 23, 0.56);
+  --el-overlay-color-lighter: rgba(2, 6, 23, 0.4);
+
+  // Box shadow
+  --el-box-shadow:       0 18px 48px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  --el-box-shadow-light: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+// ── Buttons ───────────────────────────────────────────────────────────────────
+.el-button {
+  --el-button-bg-color: var(--surface-card);
+  --el-button-border-color: var(--hairline);
+  --el-button-text-color: var(--body);
+  --el-button-hover-bg-color: var(--surface-soft);
+  --el-button-hover-border-color: var(--hairline-strong);
+  --el-button-hover-text-color: var(--on-dark);
+  --el-button-active-bg-color: var(--hairline);
+  --el-button-disabled-bg-color: var(--surface-soft);
+  --el-button-disabled-border-color: var(--hairline);
+  --el-button-disabled-text-color: var(--muted-soft);
+
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  height: 36px;
+  padding: 0 16px;
+  transition: all var(--duration-fast) var(--ease-out);
+  border: 1px solid var(--el-button-border-color) !important;
+  background-color: var(--el-button-bg-color) !important;
+  color: var(--el-button-text-color) !important;
+  letter-spacing: 0;
+
+  &:hover, &:focus {
+    background-color: var(--el-button-hover-bg-color) !important;
+    border-color: var(--el-button-hover-border-color) !important;
+    color: var(--el-button-hover-text-color) !important;
+  }
+
+  &:active {
+    background-color: var(--el-button-active-bg-color) !important;
+  }
+
+  &.is-disabled {
+    background-color: var(--el-button-disabled-bg-color) !important;
+    border-color: var(--el-button-disabled-border-color) !important;
+    color: var(--el-button-disabled-text-color) !important;
+    opacity: 0.5;
+  }
+
+  // Primary button override
+  &.el-button--primary {
+    --el-button-bg-color: var(--primary);
+    --el-button-border-color: var(--primary);
+    --el-button-text-color: var(--on-primary);
+    --el-button-hover-bg-color: var(--primary-active);
+    --el-button-hover-border-color: var(--primary-active);
+    --el-button-hover-text-color: var(--on-primary);
+    
+    background-color: var(--el-button-bg-color) !important;
+    border-color: var(--el-button-border-color) !important;
+    color: var(--el-button-text-color) !important;
+  }
+
+  // Danger button override
+  &.el-button--danger:not(.is-text) {
+    --el-button-bg-color: rgba(239, 68, 68, 0.08);
+    --el-button-border-color: rgba(239, 68, 68, 0.15);
+    --el-button-text-color: #ef4444;
+    --el-button-hover-bg-color: #ef4444;
+    --el-button-hover-border-color: #ef4444;
+    --el-button-hover-text-color: #ffffff;
+
+    background-color: var(--el-button-bg-color) !important;
+    border-color: var(--el-button-border-color) !important;
+    color: var(--el-button-text-color) !important;
+  }
+
+  // Ensure plain buttons also follow the theme
+  &.is-plain:not(.el-button--primary) {
+    background-color: transparent !important;
+    color: var(--body) !important;
+    
+    &:hover {
+      background-color: var(--surface-soft) !important;
+      color: var(--on-dark) !important;
+    }
+  }
+
+  // Text buttons
+  &.is-text {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    color: var(--muted) !important;
+    padding: 0 8px;
+
+    &:hover {
+      color: var(--on-dark) !important;
+      background-color: var(--surface-soft) !important;
+    }
+    
+    &.el-button--danger {
+      color: var(--accent-rose) !important;
+      &:hover { background-color: rgba(239, 68, 68, 0.08) !important; }
+    }
+  }
+}
+
+// ── Input: dark surface, 40px tall, 8px radius, yellow focus ──────────────────
+.el-input__wrapper {
+  background-color: var(--surface-card) !important;
+  box-shadow: 0 0 0 1px var(--hairline) inset !important;
+  border-radius: var(--radius-md) !important;
+  transition: box-shadow var(--duration-fast), background-color var(--duration-fast);
+
+  &:hover {
+    box-shadow: 0 0 0 1px var(--hairline-strong) inset !important;
+  }
+
+  &.is-focus {
+    box-shadow: 0 0 0 1px var(--accent-cyan) inset, 0 0 0 3px rgba(var(--brand-cyan-rgb), 0.08) !important;
+  }
+}
+
+.el-input__inner {
+  height: 40px !important;
+  font-family: var(--font-sans) !important;
+  font-size: 14px !important;
+  color: var(--on-dark) !important;
+  background: transparent !important;
+}
+
+.el-textarea__inner {
+  background-color: var(--surface-card) !important;
+  border: 1px solid var(--hairline) !important;
+  border-radius: var(--radius-md) !important;
+  color: var(--on-dark) !important;
+  font-size: 14px !important;
+
+  &:focus {
+    border-color: var(--accent-cyan) !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(var(--brand-cyan-rgb), 0.08) !important;
+  }
+}
+
+// ── Select dropdown ────────────────────────────────────────────────────────────
+// EP 结构：外层 .el-select__popper 画框，内层 .el-select-dropdown 无边框。
+// 只给外层上色，避免与 .el-popper.is-light 叠出双框。
+.el-select__wrapper {
+  background-color: var(--surface-card) !important;
+  box-shadow: 0 0 0 1px var(--hairline) inset !important;
+  border-radius: var(--radius-md) !important;
+  min-height: 40px !important;
+
+  &:hover {
+    box-shadow: 0 0 0 1px var(--hairline-strong) inset !important;
+  }
+
+  &.is-focused {
+    box-shadow: 0 0 0 1px var(--accent-cyan) inset, 0 0 0 3px rgba(var(--brand-cyan-rgb), 0.08) !important;
+  }
+}
+
+.el-select__popper.el-popper {
+  background-color: var(--el-bg-color-overlay) !important;
+  border: 1px solid var(--hairline-strong) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--el-box-shadow) !important;
+  padding: 0 !important;
+
+  .el-popper__arrow::before {
+    background: var(--el-bg-color-overlay) !important;
+    border: 1px solid var(--hairline-strong) !important;
+  }
+}
+
+.el-select-dropdown {
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.el-select-dropdown__item {
+  color: var(--body) !important;
+
+  &:hover,
+  &.hover {
+    background-color: var(--surface-elevated) !important;
+    color: var(--on-dark) !important;
+  }
+
+  &.selected {
+    color: var(--accent-cyan) !important;
+    font-weight: 600 !important;
+  }
+}
+
+// ── Dropdown menu (el-dropdown popper) ─────────────────────────────────────────
+// EP 结构：.el-dropdown__popper 负责边框/阴影/箭头；.el-dropdown-menu 官方无边框。
+// 此前两边都加了 border/background，再叠加 .el-popper.is-light，出现双框与样式重叠。
+.el-dropdown__popper.el-popper {
+  background-color: var(--el-bg-color-overlay) !important;
+  border: 1px solid var(--hairline-strong) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--el-box-shadow) !important;
+  padding: 0 !important;
+  overflow: visible;
+
+  .el-popper__arrow::before {
+    background: var(--el-bg-color-overlay) !important;
+    border: 1px solid var(--hairline-strong) !important;
+  }
+
+  .el-dropdown-menu {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 6px 4px !important;
+    margin: 0 !important;
+  }
+}
+
+.el-dropdown-menu__item {
+  color: var(--body) !important;
+  border-radius: var(--radius-sm) !important;
+  font-size: 13px !important;
+  gap: 6px;
+
+  .el-icon {
+    color: inherit !important;
+    margin-right: 0 !important;
+  }
+
+  &:not(.is-disabled):hover,
+  &:not(.is-disabled):focus {
+    background-color: var(--surface-elevated) !important;
+    color: var(--on-dark) !important;
+  }
+
+  &.is-disabled {
+    color: var(--muted-soft) !important;
+    background-color: transparent !important;
+  }
+
+  &.el-dropdown-menu__item--divided {
+    border-top: 1px solid var(--hairline) !important;
+  }
+}
+
+// ── Form labels ────────────────────────────────────────────────────────────────
+.el-form-item__label {
+  color: var(--muted) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+}
+
+// ── Dialog ────────────────────────────────────────────────────────────────────
+.el-dialog {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 32px) !important;
+  max-height: calc(100vh - 32px);
+  box-sizing: border-box;
+  background-color: var(--el-bg-color-overlay) !important;
+  border: 1px solid var(--hairline) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--el-box-shadow) !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+
+  .el-dialog__header {
+    flex: 0 0 auto;
+    margin-right: 0;
+    padding: var(--space-lg) var(--space-xl) var(--space-md) !important;
+    border-bottom: 1px solid var(--hairline);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    .el-dialog__headerbtn {
+      top: 20px !important;
+      right: 20px !important;
+      width: 24px;
+      height: 24px;
+      background: transparent !important;
+      border: none !important;
+
+      .el-dialog__close {
+        color: var(--muted) !important;
+        font-size: 18px;
+        
+        &:hover { color: var(--on-dark) !important; }
+      }
+    }
+  }
+
+  .el-dialog__title {
+    min-width: 0;
+    padding-right: 36px;
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0;
+    color: var(--on-dark);
+    padding-left: 0;
+  }
+
+  .el-dialog__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-top: var(--space-xl);
+  }
+
+  .el-dialog__footer {
+    flex: 0 0 auto;
+    min-width: 0;
+
+    > * {
+      max-width: 100%;
+    }
+
+    .el-button {
+      max-width: 100%;
+      margin-left: 0;
+      white-space: normal;
+    }
+  }
+}
+
+// ── Message box ───────────────────────────────────────────────────────────────
+.el-message-box {
+  background-color: var(--el-bg-color-overlay) !important;
+  border: 1px solid var(--hairline) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--el-box-shadow) !important;
+  padding: 0 !important;
+  overflow: hidden;
+  width: min(420px, calc(100vw - 32px)) !important;
+  max-width: calc(100vw - 32px) !important;
+  box-sizing: border-box;
+
+  .el-message-box__header {
+    padding: var(--space-lg) var(--space-xl) var(--space-md) !important;
+    border-bottom: 1px solid var(--hairline);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    .el-message-box__title {
+      min-width: 0;
+      padding-right: 36px;
+      font-family: var(--font-sans);
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--on-dark);
+      padding-left: 0;
+      line-height: 1;
+    }
+
+    .el-message-box__headerbtn {
+      position: absolute;
+      top: 20px !important;
+      right: 20px !important;
+      width: 24px;
+      height: 24px;
+      background: transparent !important;
+      border: none !important;
+      cursor: pointer;
+
+      .el-message-box__close {
+        color: var(--muted) !important;
+        font-size: 18px;
+        
+        &:hover { color: var(--on-dark) !important; }
+      }
+    }
+  }
+
+  .el-message-box__content {
+    padding: var(--space-xl) !important;
+    color: var(--body) !important;
+    font-size: 14px;
+    line-height: 1.6;
+
+    .el-message-box__container {
+      display: flex;
+      align-items: center; // Center align icon and text
+      gap: var(--space-md);
+    }
+
+    .el-message-box__status {
+      position: static !important;
+      transform: none !important;
+      font-size: 24px !important;
+      flex-shrink: 0;
+    }
+
+    .el-message-box__message {
+      min-width: 0;
+      padding-left: 0 !important;
+      margin-left: 0 !important;
+      flex: 1;
+    }
+  }
+
+  .el-message-box__btns {
+    flex-wrap: wrap;
+    padding: 0 var(--space-xl) var(--space-xl) !important;
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-sm);
+    
+    .el-button {
+      max-width: 100%;
+      margin-left: 0;
+      white-space: normal;
+      height: 36px;
+      padding: 0 20px;
+      font-weight: 600;
+      border-radius: var(--radius-md);
+    }
+
+    // Secondary button (Cancel)
+    .el-button:not(.el-button--primary) {
+      background: var(--surface-card) !important;
+      border-color: var(--hairline) !important;
+      color: var(--body) !important;
+
+      &:hover {
+        background: var(--surface-soft) !important;
+        color: var(--on-dark) !important;
+      }
+    }
+
+    // Primary button (Confirm/Delete)
+    .el-button--primary {
+      background-color: var(--accent-rose) !important;
+      border-color: var(--accent-rose) !important;
+      color: #ffffff !important;
+
+      &:hover {
+        background-color: #f87171 !important;
+        border-color: #f87171 !important;
+      }
+    }
+  }
+
+  // Special styling for warning type (delete confirmation)
+  &.el-message-box--warning {
+    .el-message-box__status.el-icon {
+      color: var(--accent-rose) !important;
+    }
+  }
+}
+
+.el-message-box.storyboard-regenerate-box {
+  width: min(520px, calc(100vw - 32px)) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.04) inset !important;
+
+  .el-message-box__header {
+    padding: 22px 26px 16px !important;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(var(--brand-cyan-rgb), 0.14), transparent 38%),
+      linear-gradient(180deg, var(--surface-elevated), var(--surface-card));
+
+    .el-message-box__title {
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+  }
+
+  .el-message-box__content {
+    padding: 20px 26px 18px !important;
+  }
+
+  .el-message-box__container {
+    align-items: flex-start !important;
+    gap: 0 !important;
+  }
+
+  .el-message-box__status {
+    display: none !important;
+  }
+
+  .el-message-box__message {
+    width: 100%;
+  }
+
+  .el-message-box__input {
+    margin-top: 14px;
+    padding-top: 0;
+  }
+
+  .el-textarea__inner {
+    min-height: 112px !important;
+    padding: 13px 14px !important;
+    border-radius: 14px !important;
+    background: var(--surface-soft) !important;
+    border-color: var(--hairline-strong) !important;
+    color: var(--body-strong) !important;
+    line-height: 1.6 !important;
+    resize: vertical;
+
+    &::placeholder {
+      color: var(--muted-soft) !important;
+      line-height: 1.55;
+    }
+
+    &:focus {
+      border-color: rgba(var(--brand-cyan-rgb), 0.62) !important;
+      box-shadow: 0 0 0 4px rgba(var(--brand-cyan-rgb), 0.1) !important;
+    }
+  }
+
+  .el-message-box__errormsg {
+    margin-top: 8px;
+    color: var(--accent-rose) !important;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .el-message-box__btns {
+    padding: 0 26px 24px !important;
+    gap: 12px;
+
+    .el-button {
+      height: 40px;
+      min-width: 104px;
+      border-radius: 12px;
+      font-weight: 850;
+    }
+
+    .el-button--primary {
+      background: linear-gradient(135deg, #f43f5e, #e11d48) !important;
+      border-color: #e11d48 !important;
+      box-shadow: 0 12px 26px rgba(225, 29, 72, 0.22);
+
+      &:hover {
+        background: linear-gradient(135deg, #fb7185, #f43f5e) !important;
+        border-color: #f43f5e !important;
+      }
+    }
+  }
+}
+
+.storyboard-regenerate-message {
+  display: grid;
+  gap: 14px;
+}
+
+.storyboard-regenerate-message__hero {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid rgba(var(--brand-cyan-rgb), 0.22);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(var(--brand-cyan-rgb), 0.12), rgba(var(--primary-rgb), 0.08)),
+    var(--surface-soft);
+}
+
+.storyboard-regenerate-message__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.9), rgba(var(--brand-cyan-rgb), 0.55));
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+}
+
+.storyboard-regenerate-message__hero strong {
+  display: block;
+  color: var(--body-strong);
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.35;
+}
+
+.storyboard-regenerate-message__hero p,
+.storyboard-regenerate-message__field p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.storyboard-regenerate-message__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.storyboard-regenerate-message__grid div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 13px;
+  background: var(--surface-card);
+}
+
+.storyboard-regenerate-message__grid div:last-child {
+  grid-column: 1 / -1;
+}
+
+.storyboard-regenerate-message__grid span,
+.storyboard-regenerate-message__field span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.storyboard-regenerate-message__grid strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--body-strong);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.storyboard-regenerate-message__field {
+  padding-top: 2px;
+}
+
+@media (max-width: 520px) {
+  .el-dialog {
+    max-width: calc(100vw - 16px) !important;
+
+    .el-dialog__header,
+    .el-dialog__body,
+    .el-dialog__footer {
+      padding-left: var(--space-md) !important;
+      padding-right: var(--space-md) !important;
+    }
+
+    .el-dialog__footer {
+      .el-button {
+        flex: 1 1 140px;
+      }
+    }
+  }
+
+  .el-message-box {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+
+    .el-message-box__header,
+    .el-message-box__content,
+    .el-message-box__btns {
+      padding-left: var(--space-md) !important;
+      padding-right: var(--space-md) !important;
+    }
+
+    .el-message-box__btns .el-button {
+      flex: 1 1 120px;
+    }
+  }
+
+  .el-message-box.storyboard-regenerate-box {
+    .el-message-box__header,
+    .el-message-box__content {
+      padding-left: 18px !important;
+      padding-right: 18px !important;
+    }
+
+    .el-message-box__btns {
+      padding-left: 18px !important;
+      padding-right: 18px !important;
+    }
+  }
+
+  .storyboard-regenerate-message__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+// ElMessageBox is teleported to body. Force the wrapper to stay out of the
+// document flow; otherwise stacked confirms can push the page layout down.
+.el-overlay.is-message-box,
+.el-overlay-message-box {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box;
+  min-height: 100vh;
+  width: 100vw;
+  padding: var(--space-xl) var(--space-md) !important;
+  overflow-y: auto !important;
+  text-align: left !important;
+  z-index: 2000;
+}
+
+.el-overlay.is-message-box > .el-overlay-message-box,
+.el-overlay-message-box .el-message-box {
+  margin: 0 auto !important;
+  max-width: calc(100vw - var(--space-lg) * 2);
+}
+
+// ── Notification ──────────────────────────────────────────────────────────────
+// Element Plus 通知是 teleport 到 body 的浮层。这里显式固定位置，避免它被
+// 全局布局/页面容器样式影响后参与文档流，把页面底部撑变形。
+.el-notification {
+  position: fixed !important;
+  z-index: 2600 !important;
+  display: grid !important;
+  grid-template-columns: 30px minmax(0, 1fr);
+  column-gap: 12px;
+  width: min(360px, calc(100vw - 32px)) !important;
+  min-height: 0 !important;
+  padding: 14px 38px 14px 14px !important;
+  border: 1px solid var(--hairline) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--surface-elevated) !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.04) inset !important;
+  overflow: hidden !important;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--accent-cyan);
+  }
+
+  &.success::before { background: var(--accent-emerald); }
+  &.warning::before { background: var(--accent-amber); }
+  &.error::before { background: var(--accent-rose); }
+}
+
+.el-notification.right {
+  right: 20px;
+}
+
+.el-notification.left {
+  left: 20px;
+}
+
+.el-notification__icon {
+  position: static !important;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 28px !important;
+  height: 28px !important;
+  margin: 0 !important;
+  border-radius: 9px;
+  background: rgba(var(--brand-cyan-rgb), 0.1);
+  color: var(--accent-cyan) !important;
+  font-size: 15px !important;
+}
+
+.el-notification.success .el-notification__icon {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--accent-emerald) !important;
+}
+
+.el-notification.warning .el-notification__icon {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent-amber) !important;
+}
+
+.el-notification.error .el-notification__icon {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--accent-rose) !important;
+}
+
+.el-notification__group {
+  grid-column: 2;
+  min-width: 0;
+  margin: 0 !important;
+}
+
+.el-notification__title {
+  color: var(--body-strong) !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  line-height: 1.4 !important;
+  margin: 0 !important;
+  padding-right: 4px;
+}
+
+.el-notification__content {
+  margin: 4px 0 0 !important;
+  color: var(--muted) !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+
+  p {
+    margin: 0 !important;
+  }
+}
+
+.el-notification__closeBtn {
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  left: auto !important;
+  bottom: auto !important;
+  color: var(--muted) !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+
+  &:hover {
+    color: var(--on-dark) !important;
+  }
+}
+
+// ── Message toast ────────────────────────────────────────────────────────────
+// ElMessage is teleported to body. Do not override its top/left/transform:
+// Element Plus calculates those inline for stacking multiple toasts.
+.el-message {
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translateX(-50%) !important;
+  z-index: 2700 !important;
+  display: grid !important;
+  grid-template-columns: 32px minmax(0, 1fr) !important;
+  align-items: start !important;
+  column-gap: 12px !important;
+  min-width: min(320px, calc(100vw - 32px)) !important;
+  max-width: min(560px, calc(100vw - 32px)) !important;
+  width: auto !important;
+  padding: 14px 16px !important;
+  border: 1px solid var(--hairline-strong) !important;
+  border-radius: 16px !important;
+  background: linear-gradient(180deg, var(--surface-elevated), var(--surface-card)) !important;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.04) inset !important;
+  backdrop-filter: blur(16px);
+  overflow: hidden !important;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: var(--accent-cyan);
+  }
+
+  &.el-message--success::before {
+    background: var(--accent-emerald);
+  }
+
+  &.el-message--warning::before {
+    background: var(--accent-amber);
+  }
+
+  &.el-message--error::before {
+    background: var(--accent-rose);
+  }
+
+  &.is-closable {
+    grid-template-columns: 32px minmax(0, 1fr) 18px !important;
+    padding-right: 14px !important;
+  }
+}
+
+.el-message + .el-message {
+  margin-top: 14px !important;
+}
+
+.el-message .el-message__icon {
+  grid-column: 1;
+  align-self: start;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 32px !important;
+  height: 32px !important;
+  margin: 0 !important;
+  border-radius: 10px;
+  background: rgba(var(--brand-cyan-rgb), 0.12);
+  box-shadow: inset 0 0 0 1px rgba(var(--brand-cyan-rgb), 0.08);
+  color: var(--accent-cyan) !important;
+  font-size: 16px !important;
+}
+
+.el-message.el-message--success .el-message__icon {
+  background: rgba(22, 163, 74, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(22, 163, 74, 0.08);
+  color: var(--accent-emerald) !important;
+}
+
+.el-message.el-message--warning .el-message__icon {
+  background: rgba(217, 119, 6, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.08);
+  color: var(--accent-amber) !important;
+}
+
+.el-message.el-message--error .el-message__icon {
+  background: rgba(225, 29, 72, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(225, 29, 72, 0.08);
+  color: var(--accent-rose) !important;
+}
+
+.el-message .el-message__badge {
+  position: absolute !important;
+  top: 10px !important;
+  right: 14px !important;
+}
+
+.el-message.is-closable .el-message__badge {
+  right: 36px !important;
+}
+
+.el-message .el-message__content {
+  grid-column: 2;
+  min-width: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 4px 0 0 !important;
+  padding: 0 !important;
+  color: var(--body-strong) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  line-height: 1.5 !important;
+  word-break: break-word;
+}
+
+.el-message .el-message__closeBtn {
+  grid-column: 3;
+  align-self: start;
+  margin: 7px 0 0 !important;
+  color: var(--muted) !important;
+  font-size: 14px !important;
+
+  &:hover {
+    color: var(--on-dark) !important;
+  }
+}
+
+// ── Loading spinner ───────────────────────────────────────────────────────────
+.el-loading-mask {
+  background-color: rgba(7, 11, 20, 0.65) !important;
+}
+
+// ── Overlay blur ──────────────────────────────────────────────────────────────
+.el-overlay {
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.el-overlay-dialog {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden !important;
+}
+
+// ── Segmented ─────────────────────────────────────────────────────────────────
+.el-segmented {
+  --el-segmented-bg-color: var(--surface-card);
+  --el-segmented-item-selected-bg-color: var(--primary);
+  --el-segmented-item-selected-color: var(--on-primary);
+  --el-segmented-item-hover-color: var(--on-dark);
+  --el-segmented-item-active-color: var(--on-primary);
+  border-radius: var(--radius-md);
+  padding: 2px;
+
+  .el-segmented__item.is-selected {
+    color: var(--on-primary) !important;
+    font-weight: 600;
+  }
+}
+
+// ── Radio Button ──────────────────────────────────────────────────────────────
+.el-radio-button__inner {
+  background-color: var(--surface-card) !important;
+  border-color: var(--hairline) !important;
+  color: var(--body) !important;
+  
+  &:hover {
+    color: var(--on-dark) !important;
+  }
+}
+
+.el-radio-button.is-active .el-radio-button__inner {
+  background-color: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: var(--on-primary) !important;
+  box-shadow: -1px 0 0 0 var(--primary) !important;
+  font-weight: 600;
+}
+
+// ── Tag ───────────────────────────────────────────────────────────────────────
+.el-tag {
+  border-radius: var(--radius-pill) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  height: 22px !important;
+  padding: 0 8px !important;
+}
+
+.el-progress-bar__outer {
+  background-color: var(--surface-soft) !important;
+}
+
+.el-progress-bar__inner {
+  background-color: var(--accent-cyan) !important;
+}
+
+// ── Table / Card / Pagination (dark tech) ─────────────────────────────────────
+.el-table {
+  --el-table-bg-color: var(--surface-card);
+  --el-table-tr-bg-color: var(--surface-card);
+  --el-table-header-bg-color: var(--surface-soft);
+  --el-table-row-hover-bg-color: rgba(var(--primary-rgb), 0.08);
+  --el-table-border-color: var(--hairline);
+  --el-table-text-color: var(--body);
+  --el-table-header-text-color: var(--muted);
+  --el-table-current-row-bg-color: rgba(var(--primary-rgb), 0.12);
+  background-color: var(--surface-card) !important;
+  color: var(--body) !important;
+
+  th.el-table__cell {
+    background-color: var(--surface-soft) !important;
+    color: var(--muted) !important;
+  }
+
+  tr,
+  td.el-table__cell {
+    background-color: transparent !important;
+  }
+
+  .el-table__inner-wrapper::before,
+  .el-table__border-left-patch {
+    background-color: var(--hairline) !important;
+  }
+}
+
+.el-card {
+  --el-card-bg-color: var(--surface-card);
+  background-color: var(--surface-card) !important;
+  border-color: var(--hairline) !important;
+  color: var(--body);
+}
+
+.el-pagination {
+  --el-pagination-bg-color: transparent;
+  --el-pagination-button-bg-color: var(--surface-card);
+  --el-pagination-hover-color: var(--primary);
+  color: var(--muted);
+
+  button,
+  .el-pager li {
+    background-color: var(--surface-card) !important;
+    color: var(--body) !important;
+  }
+
+  .el-pager li.is-active {
+    color: var(--primary) !important;
+  }
+}
+
+// Tooltip / Popover 等通用 light popper。
+// 排除 select / dropdown：它们已有专属单层外壳，再套一层会双框。
+.el-popper.is-light:not(.el-dropdown__popper):not(.el-select__popper):not(.el-autocomplete__popper):not(.el-cascader__dropdown),
+.el-popover.el-popper {
+  background: var(--surface-elevated) !important;
+  border: 1px solid var(--hairline-strong) !important;
+  color: var(--body) !important;
+
+  .el-popper__arrow::before {
+    background: var(--surface-elevated) !important;
+    border: 1px solid var(--hairline-strong) !important;
+  }
+}

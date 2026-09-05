@@ -1,0 +1,41 @@
+*.log
+.env
+composer.phar
+composer.lock
+.DS_Store
+Thumbs.db
+/.idea
+/.vscode
+/vendor
+/.settings
+/.buildpath
+/.project
+
+# ThinkPHP runtime/cache
+/runtime/
+
+# Docker local runtime data
+/docker/mysql/
+/docker/nginx/logs/
+
+# Local secrets and certificates
+*.pem
+*.key
+/backups/model_configs_ark_seedance_*.sql
+
+# Vue frontend build artifacts and dependencies
+/public/admin/
+/public/storage/
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.env.local
+/frontend/src/auto-imports.d.ts
+/frontend/src/components.d.ts
+
+# Local diagnostics and generated media
+/generated-videos/
+/tmp-inspect/
+/frontend/src/api/*.pre-migration.bak
+/frontend/src/views/*.pre-migration.bak
+/toArray()
+/海外sd.txt

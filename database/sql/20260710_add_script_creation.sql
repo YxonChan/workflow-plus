@@ -1,0 +1,75 @@
+CREATE TABLE IF NOT EXISTS `script_ai_configs` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int unsigned NOT NULL DEFAULT 0,
+  `config_key` varchar(32) NOT NULL DEFAULT '',
+  `name` varchar(80) NOT NULL DEFAULT '',
+  `description` varchar(255) NOT NULL DEFAULT '',
+  `model_config_id` int unsigned NOT NULL DEFAULT 0 COMMENT '0=继承默认配置或用户默认文本模型',
+  `system_prompt` longtext,
+  `task_prompt` longtext,
+  `temperature` decimal(4,2) DEFAULT NULL COMMENT 'NULL=继承默认配置',
+  `max_tokens` int unsigned DEFAULT NULL COMMENT 'NULL=继承默认配置',
+  `enabled` tinyint unsigned NOT NULL DEFAULT 1,
+  `sort` int unsigned NOT NULL DEFAULT 0,
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_script_ai_config_user_key` (`user_id`,`config_key`),
+  KEY `idx_script_ai_config_user_sort` (`user_id`,`sort`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='剧本创作 AI 默认与角色配置';
+
+CREATE TABLE IF NOT EXISTS `script_ai_projects` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int unsigned NOT NULL DEFAULT 0,
+  `title` varchar(180) NOT NULL DEFAULT '',
+  `genre` varchar(80) NOT NULL DEFAULT '',
+  `output_language` varchar(16) NOT NULL DEFAULT 'zh-CN' COMMENT 'zh-CN|en',
+  `region_style` varchar(16) NOT NULL DEFAULT 'mainland' COMMENT 'mainland|overseas',
+  `synopsis` text,
+  `requirements` text,
+  `status` varchar(24) NOT NULL DEFAULT 'draft' COMMENT 'draft|queued|running|paused|completed|failed|cancelled',
+  `current_step_key` varchar(32) NOT NULL DEFAULT 'planning',
+  `waiting_message` varchar(255) NOT NULL DEFAULT '',
+  `pause_requested` tinyint unsigned NOT NULL DEFAULT 0,
+  `run_no` int unsigned NOT NULL DEFAULT 0,
+  `final_content` longtext,
+  `error_message` text,
+  `started_at` datetime DEFAULT NULL,
+  `finished_at` datetime DEFAULT NULL,
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_script_ai_project_user_status` (`user_id`,`status`,`id`),
+  KEY `idx_script_ai_project_worker` (`status`,`pause_requested`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 驱动剧本创作项目';
+
+CREATE TABLE IF NOT EXISTS `script_ai_steps` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `project_id` bigint unsigned NOT NULL,
+  `step_key` varchar(32) NOT NULL DEFAULT '',
+  `step_name` varchar(80) NOT NULL DEFAULT '',
+  `agent_config_key` varchar(32) NOT NULL DEFAULT '',
+  `agent_name` varchar(80) NOT NULL DEFAULT '',
+  `sort` int unsigned NOT NULL DEFAULT 0,
+  `run_no` int unsigned NOT NULL DEFAULT 0,
+  `status` varchar(24) NOT NULL DEFAULT 'pending' COMMENT 'pending|queued|running|completed|failed|skipped',
+  `attempts` int unsigned NOT NULL DEFAULT 0,
+  `model_config_id` int unsigned NOT NULL DEFAULT 0,
+  `system_prompt_snapshot` longtext,
+  `task_prompt_snapshot` longtext,
+  `input_content` longtext,
+  `output_content` longtext,
+  `error_message` text,
+  `duration_ms` int unsigned NOT NULL DEFAULT 0,
+  `started_at` datetime DEFAULT NULL,
+  `completed_at` datetime DEFAULT NULL,
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_script_ai_step` (`project_id`,`step_key`),
+  KEY `idx_script_ai_step_project_sort` (`project_id`,`sort`,`id`),
+  KEY `idx_script_ai_step_worker` (`status`,`project_id`,`sort`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 剧本创作运行步骤';
+
+-- 旧版误实现使用 script_projects/script_project_members/script_project_stages 等表。
+-- 为避免破坏已有数据，本迁移不删除旧表；新功能仅使用 script_ai_* 表。
