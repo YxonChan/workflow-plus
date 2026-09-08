@@ -1,247 +1,150 @@
 name: workflow
 
 x-app-env: &app-env
-  APP_DEBUG: "false"
+  APP_DEBUG: ${APP_DEBUG:-false}
+  DB_TYPE: ${DB_TYPE:-mysql}
+  DB_HOST: ${DB_HOST:-db}
+  DB_NAME: ${DB_NAME:-aimage}
+  DB_USER: ${DB_USER:-root}
+  DB_PASS: ${DB_PASS:?DB_PASS must be set in .env}
+  DB_PORT: "${DB_PORT:-3306}"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+x-php-app: &php-app
+  image: ${PHP_IMAGE_NAME:-workflow-php:8.2}
+  env_file:
+    - .env
+  environment: *app-env
+  working_dir: /var/www/html
+  volumes:
+    - runtime-data:/var/www/html/runtime
+    - storage-data:/var/www/html/public/storage
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  networks:
+    - workflow-network
+
+x-worker: &worker
+  <<: *php-app
+  restart: unless-stopped
+  depends_on:
+    redis:
+      condition: service_healthy
 
 services:
-  # PHP 服务 (TP8 需要 PHP 8.0+)
   php:
+    <<: *php-app
     build:
       context: .
       dockerfile: docker/php.Dockerfile
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    networks:
-      - workflow-network
+      target: runtime
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(extension_loaded('pdo_mysql') ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
-  # Nginx 服务
   web:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: docker/php.Dockerfile
+      target: web
+    image: ${WEB_IMAGE_NAME:-workflow-web:1.0}
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_PORT:-8086}:80"
     volumes:
-      - ./:/var/www/html
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+      - storage-data:/var/www/html/public/storage:ro
     depends_on:
-      - php
+      php:
+        condition: service_healthy
     networks:
       - workflow-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/admin/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
-  # 后台工作流 Worker
   worker:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think workflow:worker --sleep=2 --stale-minutes=30
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
-  # 剧集自动执行 Worker
+    <<: *worker
+    command: ["php", "think", "workflow:worker", "--sleep=2", "--stale-minutes=30"]
   episode-worker:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think episode-workflow:worker --sleep=2 --stale-minutes=30
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
-  # 剧集手动单节点 Worker
+    <<: *worker
+    command: ["php", "think", "episode-workflow:worker", "--sleep=2", "--stale-minutes=30"]
   episode-node-worker:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think episode-node:worker --sleep=2 --stale-minutes=15
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
-  # 资产图片生成 Worker
+    <<: *worker
+    command: ["php", "think", "episode-node:worker", "--sleep=2", "--stale-minutes=15"]
   asset-worker:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think asset-image:worker --sleep=1 --cooldown=0 --max-concurrency=2 --stale-minutes=3 --wait-timeout-minutes=20 --poll-interval=3
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
-  # 资产图片生成 Worker 副本 2
+    <<: *worker
+    command: ["php", "think", "asset-image:worker", "--sleep=1", "--cooldown=0", "--max-concurrency=2", "--stale-minutes=3", "--wait-timeout-minutes=20", "--poll-interval=3"]
   asset-worker-2:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think asset-image:worker --sleep=1 --cooldown=0 --max-concurrency=2 --stale-minutes=3 --wait-timeout-minutes=20 --poll-interval=3
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
-  # 资产图片生成 Worker 副本 3
+    <<: *worker
+    command: ["php", "think", "asset-image:worker", "--sleep=1", "--cooldown=0", "--max-concurrency=2", "--stale-minutes=3", "--wait-timeout-minutes=20", "--poll-interval=3"]
   asset-worker-3:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think asset-image:worker --sleep=1 --cooldown=0 --max-concurrency=2 --stale-minutes=3 --wait-timeout-minutes=20 --poll-interval=3
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
-  # Agent 任务状态机 Worker
+    <<: *worker
+    command: ["php", "think", "asset-image:worker", "--sleep=1", "--cooldown=0", "--max-concurrency=2", "--stale-minutes=3", "--wait-timeout-minutes=20", "--poll-interval=3"]
   agent-worker:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think agent-task:worker --sleep=3
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
-  # 视频生成 Worker（同步阻塞；每用户 2 路需多进程并行 claim）
+    <<: *worker
+    command: ["php", "think", "agent-task:worker", "--sleep=3"]
   video-worker:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think video-job:worker --sleep=2 --cooldown=3 --per-user-concurrency=2 --max-global-concurrency=20 --stale-minutes=20
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
+    <<: *worker
+    command: ["php", "think", "video-job:worker", "--sleep=2", "--cooldown=3", "--per-user-concurrency=2", "--max-global-concurrency=20", "--stale-minutes=20"]
   video-worker-2:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think video-job:worker --sleep=2 --cooldown=3 --per-user-concurrency=2 --max-global-concurrency=20 --stale-minutes=20
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
+    <<: *worker
+    command: ["php", "think", "video-job:worker", "--sleep=2", "--cooldown=3", "--per-user-concurrency=2", "--max-global-concurrency=20", "--stale-minutes=20"]
   video-worker-3:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think video-job:worker --sleep=2 --cooldown=3 --per-user-concurrency=2 --max-global-concurrency=20 --stale-minutes=20
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
+    <<: *worker
+    command: ["php", "think", "video-job:worker", "--sleep=2", "--cooldown=3", "--per-user-concurrency=2", "--max-global-concurrency=20", "--stale-minutes=20"]
   video-worker-4:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think video-job:worker --sleep=2 --cooldown=3 --per-user-concurrency=2 --max-global-concurrency=20 --stale-minutes=20
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
-  # 灵感速创（对话式快速生成）Worker
+    <<: *worker
+    command: ["php", "think", "video-job:worker", "--sleep=2", "--cooldown=3", "--per-user-concurrency=2", "--max-global-concurrency=20", "--stale-minutes=20"]
   quick-create-worker:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think quick-create:worker --sleep=2 --cooldown=3 --max-concurrency=2 --stale-minutes=20 --pending-timeout-minutes=20
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
-
-  # AI 驱动剧本创作 Worker
+    <<: *worker
+    command: ["php", "think", "quick-create:worker", "--sleep=2", "--cooldown=3", "--max-concurrency=2", "--stale-minutes=20", "--pending-timeout-minutes=20"]
   script-creation-worker:
-    image: ${PHP_IMAGE_NAME:-workflow-php:8.2-fpm}
-    working_dir: /var/www/html
-    command: php think script-creation:worker --sleep=2 --stale-minutes=30
-    environment: *app-env
-    volumes:
-      - ./:/var/www/html
-    depends_on:
-      - db
-      - redis
-    networks:
-      - workflow-network
-    restart: unless-stopped
+    <<: *worker
+    command: ["php", "think", "script-creation:worker", "--sleep=2", "--stale-minutes=30"]
 
-  # MySQL 服务
   db:
     image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASS:?DB_PASS must be set in .env}
+      MYSQL_DATABASE: ${DB_NAME:-aimage}
     ports:
       - "127.0.0.1:${DB_FORWARD_PORT:-3308}:3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASS:?DB_PASS must be set}
-      MYSQL_DATABASE: aimage
     volumes:
-      - ./docker/mysql:/var/lib/mysql
+      - ${MYSQL_DATA_DIR:-./docker/mysql}:/var/lib/mysql
     networks:
       - workflow-network
-
-  # Redis 服务（短信验证码/JWT角色缓存）
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "127.0.0.1:${REDIS_FORWARD_PORT:-6380}:6379"
+    volumes:
+      - redis-data:/data
     networks:
       - workflow-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
 
 networks:
   workflow-network:
     driver: bridge
+volumes:
+  runtime-data:
+  storage-data:
+  redis-data:

@@ -40,14 +40,22 @@ AI Workflow is a high-performance, containerized SaaS platform for AI-driven fil
 2. **Setup environment**
    ```bash
    cp .example.env .env
+   # 必须修改 DB_PASS，并填入实际 AI/Supabase 配置
    ```
 
 3. **Start the engine**
    ```bash
-   docker-compose up -d
+   docker compose up -d --build
    ```
 
-The studio will be available at `http://localhost`.
+Compose 会启动 Nginx、PHP-FPM、MySQL、Redis 以及全部 `*:worker` 服务。本仓库本地工作台地址为 `http://localhost:8086`（`WEB_PORT`）。前端开发服务器固定 `http://localhost:5176/admin/`，API 代理指向 `8086`。
+
+查看服务状态与 Worker 日志：
+
+```bash
+docker compose ps
+docker compose logs -f worker video-worker asset-worker
+```
 
 ## Deployment Modes
 
@@ -56,17 +64,16 @@ The studio will be available at `http://localhost`.
 - Local development in this repository defaults to Docker.
 - Typical operations such as `docker compose up -d`, `docker compose restart php`, or worker restarts are intended for local debugging unless explicitly stated otherwise.
 
-### Production Deployment
+### Production Deployment (宝塔)
 
-- Production in this project may run as direct host deployment rather than Docker.
-- When the online environment is direct deployment, do not mechanically reuse Docker commands from local troubleshooting notes.
-- For production changes, first identify the real process manager in use, such as `systemd`, `supervisor`, `php-fpm`, `nginx`, `cron`, or manually started `php think` workers.
-- Image, workflow, and video worker restarts in production should be executed with the host's actual service commands, not assumed container restarts.
+- 宝塔服务器安装 Docker Engine 与 Compose Plugin 后，在项目根目录准备 `.env`。
+- 使用 `bash deploy/deploy.sh`；脚本默认执行 `docker compose up -d --build`，PHP-FPM、Nginx、MySQL、Redis 与全部 Worker 均由 Docker 管理。
+- 若需明确回退到旧的宿主机 PHP/systemd 部署，设置 `AI_WORKFLOW_USE_DOCKER=0` 后再执行脚本。
+- 生产环境可设置 `AI_WORKFLOW_EXTERNAL_DB=1`，使用宝塔或独立 MySQL；此时 Docker 只运行 PHP-FPM、Nginx、Redis 与全部 Worker。
 
 ### Operational Note
 
-- Any troubleshooting or deployment instruction must explicitly distinguish `local Docker` from `production direct deployment`.
-- If the current environment is unknown, verify the deployment mode first before giving restart or rollout commands.
+- Troubleshooting commands must distinguish Docker Compose services from the optional direct-deployment fallback.
 
 ## Project Structure
 

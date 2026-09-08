@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { usePageQuery, queryId, queryChoice } from '@/utils/pageQuery'
 import {
   ArrowLeft,
   Close,
@@ -58,8 +59,9 @@ const configs = ref<ScriptAiConfig[]>([])
 const configDraft = ref<ScriptAiConfig[]>([])
 const textModels = ref<ScriptTextModel[]>([])
 const selectedProject = ref<ScriptProject | null>(null)
-const selectedStepId = ref<number | null>(null)
-const activeOutputTab = ref('output')
+const selectedStepId = usePageQuery<number | null>('step_id', null, queryId)
+const locationProjectId = usePageQuery<number | null>('project_id', null, queryId)
+const activeOutputTab = usePageQuery('tab', 'output', queryChoice(['output', 'handoff', 'input', 'prompt'] as const, 'output'))
 const createVisible = ref(false)
 const configVisible = ref(false)
 const exporting = ref(false)
@@ -204,19 +206,28 @@ async function loadProjects() {
   projects.value = result.projects
 }
 
+let projectRequest = 0
+let loadingProjectId: number | null = null
 async function openProject(id: number) {
+  const requestId = ++projectRequest
+  loadingProjectId = id
+  locationProjectId.value = id
   loading.value = true
   try {
     const result = await getScriptProject(id)
-    setProject(result.project)
+    if (requestId === projectRequest && locationProjectId.value === id) setProject(result.project)
   } finally {
-    loading.value = false
+    if (requestId === projectRequest) {
+      loadingProjectId = null
+      loading.value = false
+    }
   }
 }
 
 function setProject(project: ScriptProject) {
   const previousStepId = selectedStepId.value
   selectedProject.value = project
+  locationProjectId.value = project.id
   const selectedStillExists = project.steps.some((step) => step.id === previousStepId)
   if (!selectedStillExists) {
     selectedStepId.value = project.steps.find((step) => step.step_key === project.current_step_key)?.id
@@ -233,6 +244,10 @@ function selectStep(step: ScriptStep) {
 }
 
 function closeProject() {
+  projectRequest++
+  loadingProjectId = null
+  loading.value = false
+  locationProjectId.value = null
   selectedProject.value = null
   selectedStepId.value = null
   void loadProjects()
@@ -309,7 +324,7 @@ async function refreshSelectedProject() {
   polling.value = true
   try {
     const result = await getScriptProject(project.id, { silent: true })
-    setProject(result.project)
+    if (locationProjectId.value === project.id) setProject(result.project)
   } catch {
     // 轮询失败不打断页面
   } finally {
@@ -478,9 +493,32 @@ async function handleCancel() {
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let pageReady = false
+
+async function restoreProject() {
+  const id = locationProjectId.value
+  if (!id) {
+    projectRequest++
+    loadingProjectId = null
+    loading.value = false
+    selectedProject.value = null
+    return
+  }
+  if (selectedProject.value?.id === id) return
+  if (loadingProjectId === id) return
+  if (!projects.value.some((project) => project.id === id)) {
+    closeProject()
+    return
+  }
+  await openProject(id)
+}
+
+watch(locationProjectId, () => { if (pageReady) void restoreProject() })
 
 onMounted(async () => {
   await loadBootstrap()
+  await restoreProject()
+  pageReady = true
   pollTimer = setInterval(() => {
     if (selectedProject.value && activeStatuses.includes(selectedProject.value.status)) {
       void refreshSelectedProject()

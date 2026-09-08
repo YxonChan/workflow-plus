@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 生产一键更新（宝塔）：Git 快进 + 前端构建 + Composer + 重载 PHP-FPM/systemd workers
+# 生产一键更新（宝塔）：Git 快进 + Docker 多阶段构建 + Compose 启动全部服务
 # 用法：
 #   bash /www/wwwroot/ai-workflow/deploy/deploy.sh
 # 可选：
@@ -13,17 +13,24 @@ umask 022
 APP_ROOT="${AI_WORKFLOW_APP_ROOT:-/www/wwwroot/ai-workflow}"
 BRANCH="${AI_WORKFLOW_BRANCH:-main}"
 REPO_URL="${AI_WORKFLOW_REPO_URL:-https://github.com/YxonChan/workflow.git}"
-BACKUP_ROOT="${AI_WORKFLOW_BACKUP_DIR:-/www/backup/ai-workflow}"
 PHP_BIN="${AI_WORKFLOW_PHP_BIN:-/www/server/php/82/bin/php}"
 SITE_URL="${AI_WORKFLOW_SITE_URL:-https://ai.taptalk.live}"
+USE_DOCKER="${AI_WORKFLOW_USE_DOCKER:-1}"
+EXTERNAL_DB="${AI_WORKFLOW_EXTERNAL_DB:-0}"
+COMPOSE_FILE="${AI_WORKFLOW_COMPOSE_FILE:-$APP_ROOT/docker-compose.yml}"
+COMPOSE_EXTERNAL_FILE="${AI_WORKFLOW_EXTERNAL_COMPOSE_FILE:-}"
+COMPOSE_EXTERNAL_FILE_EXPLICIT=0
+if [[ -n "$COMPOSE_EXTERNAL_FILE" ]]; then
+  COMPOSE_EXTERNAL_FILE_EXPLICIT=1
+fi
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DIR="${BACKUP_ROOT}/${STAMP}-deploy"
 
 OLD_COMMIT=""
 NEW_COMMIT=""
 DEPLOY_STARTED=0
 LIVE_DIR=""
 MODE=""
+COMPOSE_ARGS=()
 
 log() {
   printf '[%s] %s\n' "$(date '+%F %T')" "$*"
@@ -39,6 +46,9 @@ require_command() {
 }
 
 resolve_php() {
+  if [[ "$USE_DOCKER" == "1" ]]; then
+    return 0
+  fi
   if [[ -x "$PHP_BIN" ]]; then
     return 0
   fi
@@ -93,50 +103,6 @@ parse_env_value() {
   printf '%s' "$line" | sed -E "s/^[^=]*=[[:space:]]*//" | sed -E "s/^['\"]|['\"]$//g" | tr -d '\r'
 }
 
-backup_database() {
-  local env_file="$1"
-  local db_host db_port db_name db_user db_pass
-  db_host="$(parse_env_value "$env_file" DB_HOST)"
-  db_port="$(parse_env_value "$env_file" DB_PORT)"
-  db_name="$(parse_env_value "$env_file" DB_NAME)"
-  db_user="$(parse_env_value "$env_file" DB_USER)"
-  db_pass="$(parse_env_value "$env_file" DB_PASS)"
-  if [[ -z "$db_pass" ]]; then
-    db_pass="$(parse_env_value "$env_file" DB_PASSWORD)"
-  fi
-  [[ -n "$db_host" ]] || db_host="127.0.0.1"
-  [[ -n "$db_port" ]] || db_port="3306"
-
-  install -d -m 700 "$BACKUP_DIR"
-  if [[ -f "$env_file" ]]; then
-    cp -a "$env_file" "$BACKUP_DIR/runtime.env"
-    chmod 600 "$BACKUP_DIR/runtime.env"
-  fi
-
-  local mysqldump_bin=""
-  if [[ -x /www/server/mysql/bin/mysqldump ]]; then
-    mysqldump_bin=/www/server/mysql/bin/mysqldump
-  elif command -v mysqldump >/dev/null 2>&1; then
-    mysqldump_bin="$(command -v mysqldump)"
-  fi
-
-  if [[ -z "$mysqldump_bin" || -z "$db_name" || -z "$db_user" ]]; then
-    log "WARN: 跳过数据库备份（缺少 mysqldump 或 DB 配置）"
-    return 0
-  fi
-
-  log "备份数据库 $db_name → $BACKUP_DIR/db.sql"
-  if ! MYSQL_PWD="$db_pass" "$mysqldump_bin" \
-    -h"$db_host" -P"$db_port" -u"$db_user" \
-    --single-transaction --routines --triggers --no-tablespaces --databases "$db_name" \
-    >"$BACKUP_DIR/db.sql"; then
-    log "WARN: mysqldump 失败，继续部署（已保留 env 备份）"
-    return 0
-  fi
-  chmod 600 "$BACKUP_DIR/db.sql" || true
-  log "数据库备份完成：$(wc -c <"$BACKUP_DIR/db.sql") bytes"
-}
-
 git_fast_forward() {
   [[ -d "$LIVE_DIR/.git" ]] || die "不是 Git 目录：$LIVE_DIR"
   if [[ -n "$(git -C "$LIVE_DIR" status --porcelain)" ]]; then
@@ -152,6 +118,10 @@ git_fast_forward() {
 }
 
 build_frontend() {
+  if [[ "$USE_DOCKER" == "1" ]]; then
+    log "Docker 模式：前端将在镜像构建阶段生成"
+    return 0
+  fi
   if [[ "${SKIP_FRONTEND:-0}" == "1" ]]; then
     log "SKIP_FRONTEND=1，跳过前端构建"
     return 0
@@ -179,6 +149,10 @@ build_frontend() {
 }
 
 composer_install_if_needed() {
+  if [[ "$USE_DOCKER" == "1" ]]; then
+    log "Docker 模式：Composer 依赖将在镜像构建阶段安装"
+    return 0
+  fi
   if [[ "${SKIP_COMPOSER:-0}" == "1" ]]; then
     log "SKIP_COMPOSER=1，跳过 composer"
     return 0
@@ -296,6 +270,11 @@ ensure_runtime_dirs() {
 }
 
 apply_sql_and_defaults() {
+  if [[ "$USE_DOCKER" == "1" && "$EXTERNAL_DB" != "1" ]]; then
+    log "Docker 模式：跳过宿主机 SQL/PHP 脚本，避免连接错误运行时；请通过 compose exec 执行一次性迁移"
+    return 0
+  fi
+
   local env_file="$LIVE_DIR/.env"
   [[ -f "$env_file" ]] || env_file="$APP_ROOT/.env"
   [[ -f "$env_file" ]] || {
@@ -312,6 +291,9 @@ apply_sql_and_defaults() {
   [[ -n "$db_pass" ]] || db_pass="$(parse_env_value "$env_file" DB_PASSWORD)"
   [[ -n "$db_host" ]] || db_host="127.0.0.1"
   [[ -n "$db_port" ]] || db_port="3306"
+  if [[ "$db_host" == "host.docker.internal" ]]; then
+    db_host="${DB_BACKUP_HOST:-127.0.0.1}"
+  fi
 
   if [[ -x /www/server/mysql/bin/mysql ]]; then
     mysql_bin=/www/server/mysql/bin/mysql
@@ -327,6 +309,11 @@ apply_sql_and_defaults() {
       <"$LIVE_DIR/database/sql/20260820_add_credit_system.sql" || log "WARN: 积分 SQL 执行失败/已存在，继续"
   fi
 
+  if [[ "$USE_DOCKER" == "1" ]]; then
+    log "Docker 外部数据库模式：跳过宿主机 PHP 默认模型脚本；请在容器启动后手动执行"
+    return 0
+  fi
+
   if [[ -f "$LIVE_DIR/scripts/apply_tencent_image_defaults.php" ]]; then
     log "同步腾讯生图默认 options"
     (
@@ -337,6 +324,14 @@ apply_sql_and_defaults() {
 }
 
 reload_runtime() {
+  if [[ "$USE_DOCKER" == "1" ]]; then
+    require_command docker
+    [[ -f "$COMPOSE_FILE" ]] || die "缺少 Compose 文件：$COMPOSE_FILE"
+    log "Docker 模式：构建并启动 PHP、Nginx、数据库、Redis 与全部 Worker"
+    (cd "$(dirname "$COMPOSE_FILE")" && docker compose "${COMPOSE_ARGS[@]}" up -d --build --remove-orphans)
+    return 0
+  fi
+
   if [[ -f /www/server/php/82/var/run/php-fpm.pid ]]; then
     kill -USR2 "$(cat /www/server/php/82/var/run/php-fpm.pid)" || true
     log "已重载 PHP-FPM 8.2"
@@ -391,7 +386,6 @@ rollback_hint() {
   trap - ERR
   if (( DEPLOY_STARTED == 1 )); then
     log "部署失败。源码可回退：git -C $LIVE_DIR reset --hard ${OLD_COMMIT:-HEAD}"
-    log "数据库备份目录：$BACKUP_DIR"
   fi
   exit "$exit_code"
 }
@@ -400,8 +394,26 @@ trap rollback_hint ERR
 
 require_command git
 require_command curl
+if [[ "$USE_DOCKER" == "1" ]]; then
+  require_command docker
+fi
 resolve_php
 detect_layout
+
+if [[ "$USE_DOCKER" == "1" && ! -f "$COMPOSE_FILE" && -f "$LIVE_DIR/docker-compose.yml" ]]; then
+  COMPOSE_FILE="$LIVE_DIR/docker-compose.yml"
+fi
+
+if [[ "$USE_DOCKER" == "1" ]]; then
+  COMPOSE_ARGS=(-f "$COMPOSE_FILE")
+  if [[ "$EXTERNAL_DB" == "1" ]]; then
+    if [[ -z "$COMPOSE_EXTERNAL_FILE" ]]; then
+      COMPOSE_EXTERNAL_FILE="$(dirname "$COMPOSE_FILE")/docker-compose.external.yml"
+    fi
+    [[ -f "$COMPOSE_EXTERNAL_FILE" ]] || die "外部数据库模式缺少 Compose 覆盖文件：$COMPOSE_EXTERNAL_FILE"
+    COMPOSE_ARGS+=(-f "$COMPOSE_EXTERNAL_FILE")
+  fi
+fi
 
 log "APP_ROOT=$APP_ROOT"
 log "LIVE_DIR=$LIVE_DIR"
@@ -414,12 +426,22 @@ ENV_FILE="$LIVE_DIR/.env"
 [[ -f "$ENV_FILE" ]] || die "缺少 .env（$LIVE_DIR/.env 或 $APP_ROOT/.env）"
 
 git_fast_forward
-backup_database "$ENV_FILE"
 DEPLOY_STARTED=1
 
 build_frontend
 composer_install_if_needed
 publish_release_if_needed
+if [[ "$USE_DOCKER" == "1" && -f "$LIVE_DIR/docker-compose.yml" ]]; then
+  COMPOSE_FILE="$LIVE_DIR/docker-compose.yml"
+  COMPOSE_ARGS=(-f "$COMPOSE_FILE")
+  if [[ "$EXTERNAL_DB" == "1" ]]; then
+    if (( COMPOSE_EXTERNAL_FILE_EXPLICIT == 0 )); then
+      COMPOSE_EXTERNAL_FILE="$LIVE_DIR/docker-compose.external.yml"
+    fi
+    [[ -f "$COMPOSE_EXTERNAL_FILE" ]] || die "外部数据库模式缺少 Compose 覆盖文件：$COMPOSE_EXTERNAL_FILE"
+    COMPOSE_ARGS+=(-f "$COMPOSE_EXTERNAL_FILE")
+  fi
+fi
 ensure_runtime_dirs
 apply_sql_and_defaults
 reload_runtime
@@ -429,5 +451,4 @@ verify
 DEPLOY_STARTED=0
 trap - ERR
 log "部署成功：${NEW_COMMIT:-unknown}"
-log "备份：$BACKUP_DIR"
 echo DEPLOY_OK

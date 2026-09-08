@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+vendor
+frontend/node_modules
+frontend/dist
+docker/mysql
+runtime
+public/storage
+generated-videos
+tmp-inspect
+*.pem
+*.key
+*.log
+node_modules

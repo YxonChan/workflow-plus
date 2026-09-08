@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { usePageQuery, queryChoice, queryId } from '@/utils/pageQuery'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Edit, Delete, Picture, InfoFilled, MagicStick, Upload, Warning, Loading, DocumentCopy, Share, CircleClose, CopyDocument } from '@element-plus/icons-vue'
 import BadgePill from '@/components/ui/BadgePill.vue'
@@ -24,7 +25,7 @@ import type { Asset, AssetImage, AssetImageVersion, AssetPayload, AssetType, Mod
 
 const authStore = useAuthStore()
 
-const activeAssetTab = ref<'mine' | 'shared'>('mine')
+const activeAssetTab = usePageQuery('tab', 'mine', queryChoice(['mine', 'shared'] as const, 'mine'))
 const shareDialogVisible = ref(false)
 const shareTarget = ref<ShareTarget | null>(null)
 const reuseDialogVisible = ref(false)
@@ -425,9 +426,10 @@ const loading = ref(true)
 const saving = ref(false)
 const seriesList = ref<Series[]>([])
 const assets = ref<Asset[]>([])
-const selectedSeriesId = ref<number | null>(null)
-const typeFilter = ref<'all' | AssetType>('all')
-const keyword = ref('')
+const selectedSeriesId = usePageQuery<number | null>('series_id', null, queryId)
+const typeFilter = usePageQuery('type', 'all', queryChoice(['all', 'character', 'scene', 'prop'] as const, 'all'))
+const keyword = usePageQuery('q', '', (value) => value)
+const locationAssetId = usePageQuery<number | null>('asset_id', null, queryId)
 const assetSearchPlaceholder = computed(() => t('asset.search.placeholder'))
 
 const dialogVisible = ref(false)
@@ -637,8 +639,8 @@ async function loadSeries(options: { silent?: boolean } = {}) {
   try {
     const data = await listSeries(undefined, { silent: options.silent })
     seriesList.value = data
-    if (!selectedSeriesId.value && data.length > 0) {
-      selectedSeriesId.value = data[0].id
+    if (!data.some((series) => series.id === selectedSeriesId.value)) {
+      selectedSeriesId.value = data[0]?.id ?? null
     }
   } catch (error) {
     if (options.silent) return
@@ -675,14 +677,18 @@ function loadBatchCorePromptPreference() {
   }
 }
 
+let assetsLoadedForSeries: number | null = null
 async function loadAssetsBySeries(options: { silent?: boolean } = {}) {
   if (!selectedSeriesId.value) {
     assets.value = []
     syncAssetListPoll()
     return
   }
+  const seriesId = selectedSeriesId.value
   try {
-    const data = await listAssets({ series_id: selectedSeriesId.value }, { silent: options.silent })
+    const data = await listAssets({ series_id: seriesId }, { silent: options.silent })
+    if (selectedSeriesId.value !== seriesId) return
+    assetsLoadedForSeries = seriesId
     assets.value = (data || []).map((a) => hydrateAsset(a))
     syncAssetListPoll()
   } catch (error) {
@@ -701,9 +707,54 @@ async function loadData() {
   }
 }
 
+let pageReady = false
+let selectionRequest = 0
+watch(selectedSeriesId, async (seriesId) => {
+  if (!pageReady) return
+  if (seriesId && !seriesList.value.some((series) => series.id === seriesId)) {
+    selectedSeriesId.value = seriesList.value[0]?.id ?? null
+    return
+  }
+  const requestId = ++selectionRequest
+  loading.value = true
+  try {
+    await loadAssetsBySeries()
+  } finally {
+    if (requestId === selectionRequest) {
+      loading.value = false
+      syncSeriesLockPoll()
+    }
+  }
+})
+watch([assets, locationAssetId], () => {
+  if (loading.value) return
+  restoreAssetEditor()
+})
+watch(loading, (value) => { if (!value) restoreAssetEditor() })
+watch(dialogVisible, (visible) => { if (!visible) locationAssetId.value = null })
+
+function restoreAssetEditor() {
+  if (assetsLoadedForSeries !== selectedSeriesId.value) return
+  if (!locationAssetId.value) {
+    if (editorAsset.value) dialogVisible.value = false
+    return
+  }
+  const asset = assets.value.find((item) => item.id === locationAssetId.value)
+  if (!asset) {
+    locationAssetId.value = null
+    dialogVisible.value = false
+    return
+  }
+  if (dialogVisible.value && editorAsset.value?.id === asset.id) return
+  editorAsset.value = hydrateAsset(asset)
+  editorInitialType.value = asset.type
+  dialogVisible.value = true
+}
+
 onMounted(() => {
   loadBatchCorePromptPreference()
   void loadData().finally(() => {
+    pageReady = true
     syncSeriesLockPoll()
   })
 })
@@ -745,14 +796,8 @@ function persistBatchCorePromptPreference() {
 async function onSeriesChange() {
   typeFilter.value = 'all'
   keyword.value = ''
-  loading.value = true
-  try {
-    await loadSeries()
-    await loadAssetsBySeries()
-  } finally {
-    loading.value = false
-    syncSeriesLockPoll()
-  }
+  locationAssetId.value = null
+  dialogVisible.value = false
 }
 
 function resetForm() {
@@ -792,6 +837,7 @@ function openEdit(asset: Asset) {
   }
   const latest = assets.value.find((item) => item.id === asset.id) ?? asset
   editorAsset.value = hydrateAsset(latest)
+  locationAssetId.value = asset.id
   editorInitialType.value = latest.type
   dialogVisible.value = true
 }

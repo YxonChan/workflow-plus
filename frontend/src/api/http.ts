@@ -97,7 +97,7 @@ http.interceptors.response.use(
       } catch {
         clearSession()
         if (window.location.pathname !== '/admin/login') {
-          window.location.href = '/admin/login'
+          redirectToLogin()
         }
       }
     }
@@ -114,7 +114,7 @@ http.interceptors.response.use(
     if (error.response?.status === 401) {
       clearSession()
       if (window.location.pathname !== '/admin/login') {
-        window.location.href = '/admin/login'
+        redirectToLogin()
       }
     }
     if (!isSilent(originalConfig)) {
@@ -123,6 +123,12 @@ http.interceptors.response.use(
     return Promise.reject(new ApiError(error.response?.status ?? 0, message))
   },
 )
+
+function redirectToLogin() {
+  const { pathname, search, hash } = window.location
+  const path = pathname.startsWith('/admin/') ? pathname.slice('/admin'.length) : '/dashboard'
+  window.location.href = `/admin/login?redirect=${encodeURIComponent(path + search + hash)}`
+}
 
 /**
  * Generic request helper that returns the unwrapped `data` field.

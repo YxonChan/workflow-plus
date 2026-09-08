@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { usePageQuery, usePageQueryRecord, queryId } from '@/utils/pageQuery'
 import { useI18n } from 'vue-i18n'
 import {
   ArrowLeft,
@@ -136,9 +137,9 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const activeEpisodeId = ref<number | null>(null)
-const expandedNodeIds = ref<Record<string, boolean>>({})
-const selectedShotKeys = ref<Record<string, string>>({})
+const activeEpisodeId = usePageQuery<number | null>('episode_id', null, queryId)
+const expandedNodeIds = usePageQueryRecord<boolean>('nodes', 'boolean')
+const selectedShotKeys = usePageQueryRecord<string>('shots', 'string')
 const shotPromptDrafts = ref<Record<string, string>>({})
 const storyboardEditingKeys = ref<Record<string, boolean>>({})
 const storyboardShotDrafts = ref<Record<string, StoryboardShotDraft>>({})

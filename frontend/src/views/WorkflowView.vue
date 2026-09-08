@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { usePageQuery, queryId } from '@/utils/pageQuery'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -42,6 +43,8 @@ const deletingIds = ref<Set<number>>(new Set())
 const view = ref<'library' | 'editor'>('library')
 const editingBundle = ref<WorkflowBundle | null>(null)
 const editingDraftFromBundleId = ref<number | null>(null)
+const locationBundleId = usePageQuery<number | null>('bundle_id', null, queryId)
+const locationDraftId = usePageQuery<number | null>('draft_from', null, queryId)
 
 function applyModelGroups(groups: ModelConfigGroup[]) {
   const next: Record<ModelType, WorkflowModelOption[]> = { text: [], image: [], video: [], voice: [] }
@@ -75,17 +78,35 @@ async function loadAll() {
   }
 }
 
-onMounted(loadAll)
+function restoreEditor() {
+  if (isLoading.value) return
+  const bundle = bundles.value.find((item) => item.id === locationBundleId.value)
+  if (!bundle) {
+    backToLibrary()
+    return
+  }
+  openEditor(bundle, locationDraftId.value)
+}
+
+onMounted(async () => {
+  await loadAll()
+  restoreEditor()
+})
+watch([locationBundleId, locationDraftId], restoreEditor)
 
 function openEditor(b: WorkflowBundle, draftFromBundleId: number | null = null) {
   editingBundle.value = b
   editingDraftFromBundleId.value = draftFromBundleId
   view.value = 'editor'
+  locationBundleId.value = b.id
+  locationDraftId.value = draftFromBundleId
 }
 function backToLibrary() {
   view.value = 'library'
   editingBundle.value = null
   editingDraftFromBundleId.value = null
+  locationBundleId.value = null
+  locationDraftId.value = null
 }
 
 async function handleCreate() {

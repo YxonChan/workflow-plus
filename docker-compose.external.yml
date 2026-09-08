@@ -1,0 +1,10 @@
+# Production override: use MySQL managed by Baota or another server.
+# Start with:
+#   AI_WORKFLOW_EXTERNAL_DB=1 bash deploy/deploy.sh
+# or:
+#   docker compose -f docker-compose.yml -f docker-compose.external.yml up -d --build
+services:
+  db:
+    # Keep the service definition available for local mode, but do not start it
+    # when this override is selected.
+    profiles: ["local-db"]

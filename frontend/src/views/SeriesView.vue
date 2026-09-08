@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { usePageQuery, queryId, updatePageQuery } from '@/utils/pageQuery'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Box, Check, Connection, Delete, EditPen, Loading, Plus, QuestionFilled, UploadFilled, Warning } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -83,8 +84,8 @@ const promptTemplates = ref<PromptTemplate[]>([])
 const workflowsLoaded = ref(false)
 const bundlesLoaded = ref(false)
 const promptTemplatesLoaded = ref(false)
-const selectedSeriesId = ref<number | null>(null)
-const selectedEpisodeId = ref<number | null>(null)
+const selectedSeriesId = usePageQuery<number | null>('series_id', null, queryId)
+const selectedEpisodeId = usePageQuery<number | null>('episode_id', null, queryId)
 const selectedEpisode = ref<Episode | null>(null)
 const selectedDetailNodeId = ref<string | null>(null)
 /** 点击执行后乐观标记为 running，直到接口返回或轮询刷新 */
@@ -312,6 +313,7 @@ function backToGallery() {
   selectedEpisode.value = null
   selectedEpisodeId.value = null
   selectedSeriesId.value = null
+  updatePageQuery(router, { episode_id: undefined, nodes: undefined, shots: undefined })
 }
 
 async function openWizard() {
@@ -1752,6 +1754,9 @@ async function loadAll() {
 async function loadSeriesCatalog() {
   const sData = await listSeries()
   seriesList.value = sData
+  if (selectedSeriesId.value && !sData.some((series) => series.id === selectedSeriesId.value)) {
+    backToGallery()
+  }
   syncEpisodeCacheFromSeries()
 
   // 不再自动选中第一部作品：默认落地在作品库（gallery）
@@ -2011,8 +2016,10 @@ const plotInputRef = ref<{ focus?: () => void } | null>(null)
 /** 深链指定的剧集段工作流 id（套餐生成时覆盖默认剧集工作流） */
 const pendingEpisodeWorkflowId = ref<number | null>(null)
 
+let pageReady = false
 onMounted(async () => {
   await loadAll()
+  pageReady = true
   restoreActiveWorkflowRun()
   await applyWorkflowDeepLink()
 })
@@ -2030,6 +2037,7 @@ onBeforeUnmount(() => {
 
 // 解析进度只属于当前作品。切换作品或返回作品库时，立即解除旧任务绑定，
 // 避免旧作品的顶部进度条残留在新作品页面。
+let seriesSelectionPromise = Promise.resolve()
 watch(selectedSeriesId, (seriesId, previousSeriesId) => {
   const runSeriesId = Number(activeWorkflowRun.value?.series_id || 0)
   if (runSeriesId > 0 && runSeriesId !== Number(seriesId || 0)) {
@@ -2042,7 +2050,11 @@ watch(selectedSeriesId, (seriesId, previousSeriesId) => {
   if (seriesId && seriesId !== previousSeriesId) {
     void ensureActiveWorkflowRunSynced()
   }
-})
+  if (pageReady && seriesId !== previousSeriesId) {
+    clearSelectedEpisode()
+    seriesSelectionPromise = loadAll()
+  }
+}, { flush: 'sync' })
 
 function stopWorkflowRunStream() {
   if (workflowRunSource !== null) {
@@ -2343,9 +2355,23 @@ async function ensureActiveWorkflowRunSynced() {
   }
 }
 
-watch(selectedEpisodeId, () => {
+let episodeSelectionRequest = 0
+watch(selectedEpisodeId, (episodeId, previousEpisodeId) => {
   executingNodeId.value = null
   clearVideoPromptPreviewState()
+  if (!pageReady || episodeId === previousEpisodeId) return
+  const series = selectedSeries.value
+  if (!series || !episodeId) {
+    selectedEpisode.value = null
+    return
+  }
+  if (!series.episodes.some((episode) => episode.id === episodeId)) {
+    selectedEpisodeId.value = null
+    return
+  }
+  void selectEpisode(episodeId).catch(() => {
+    if (selectedEpisodeId.value === episodeId) selectedEpisode.value = null
+  })
 })
 
 watch(
@@ -2378,9 +2404,7 @@ watch(
 
 async function pickSeries(id: number) {
   selectedSeriesId.value = id
-  clearSelectedEpisode()
-  await ensureDashboardData(id)
-  await syncSelectedEpisodeWithSeries()
+  await seriesSelectionPromise
 }
 
 function clearSelectedEpisode() {
@@ -2421,6 +2445,7 @@ function episodeNeedsDetailFetch(episode: Episode | null | undefined): boolean {
 
 async function selectEpisode(id: number) {
   if (selectedEpisodeId.value === id && selectedEpisode.value && !episodeNeedsDetailFetch(selectedEpisode.value)) return
+  const requestId = ++episodeSelectionRequest
   selectedEpisodeId.value = id
   const cached = episodeDetailCache.get(id)
   if (cached && !episodeNeedsDetailFetch(cached)) {
@@ -2436,6 +2461,7 @@ async function selectEpisode(id: number) {
   }
 
   const episode = await getEpisode(id)
+  if (requestId !== episodeSelectionRequest || selectedEpisodeId.value !== id) return
   episodeDetailCache.set(id, episode)
   selectedEpisode.value = cloneEpisode(episode)
 }
@@ -2976,7 +3002,8 @@ async function runNextNode(options: { allowPending?: boolean } = {}) {
     </div>
 
     <ProductionDashboard
-      v-if="view === 'dashboard'"
+      v-if="view === 'dashboard' && selectedSeries"
+      :key="selectedSeriesId ?? 0"
       :series="selectedSeries"
       :episodes="dashboardEpisodes"
       :assets="seriesAssets"
