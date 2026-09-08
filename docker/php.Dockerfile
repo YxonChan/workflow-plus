@@ -5,6 +5,7 @@
 FROM chialab/php:8.2-fpm AS composer-deps
 WORKDIR /src
 COPY composer.json composer.lock ./
+RUN composer config -g repos.packagist composer https://mirrors.cloud.tencent.com/composer/
 RUN composer install \
     --no-dev \
     --no-interaction \
