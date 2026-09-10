@@ -6,7 +6,6 @@ namespace app\controller;
 
 use app\BaseController;
 use app\support\MediaStorage;
-use app\support\SupabaseStorage;
 use app\support\WorkerReferenceToken;
 use think\exception\HttpException;
 use think\exception\HttpResponseException;
@@ -32,9 +31,8 @@ class UploadController extends BaseController
         $isQuickCreateReference = $purpose === 'quick_create';
 
         try {
-            $maxImageBytes = $isQuickCreateReference && SupabaseStorage::isEnabledForQuickCreate()
-                ? min(self::MAX_UPLOAD_SIZE, SupabaseStorage::maxBytes())
-                : ($isWorkerReference ? 10 * 1024 * 1024 : self::MAX_UPLOAD_SIZE);
+            // 速创与作品统一本站存储，避免 ToAPIs 人像入库跨海拉取 Supabase 超时。
+            $maxImageBytes = $isWorkerReference ? 10 * 1024 * 1024 : self::MAX_UPLOAD_SIZE;
             validate(['file' => [
                 'fileSize' => $maxImageBytes,
                 'fileExt'  => 'jpg,jpeg,png,gif,webp',
@@ -42,27 +40,15 @@ class UploadController extends BaseController
             ]])->check(['file' => $file]);
 
             $originalName = method_exists($file, 'getOriginalName') ? (string) $file->getOriginalName() : 'reference';
-            if ($isQuickCreateReference && SupabaseStorage::isEnabledForQuickCreate()) {
-                $url = SupabaseStorage::uploadLocalFile(
-                    $file->getPathname(),
-                    'quick-create/references/images',
-                    $originalName,
-                    [
-                        'user_id' => $this->currentUserId(),
-                        'source' => 'quick-create-reference-image',
-                    ]
-                );
-            } else {
-                $url = MediaStorage::uploadLocalImage(
-                    $file->getPathname(),
-                    $isWorkerReference ? 'uploads/worker-chat' : ($isQuickCreateReference ? 'uploads/quick-create/images' : 'uploads/assets'),
-                    $originalName,
-                    [
-                        'user_id' => $this->currentUserId(),
-                        'source' => $isWorkerReference ? 'worker-reference' : ($isQuickCreateReference ? 'quick-create-reference-image' : 'upload'),
-                    ]
-                );
-            }
+            $url = MediaStorage::uploadLocalImage(
+                $file->getPathname(),
+                $isWorkerReference ? 'uploads/worker-chat' : ($isQuickCreateReference ? 'uploads/quick-create/images' : 'uploads/assets'),
+                $originalName,
+                [
+                    'user_id' => $this->currentUserId(),
+                    'source' => $isWorkerReference ? 'worker-reference' : ($isQuickCreateReference ? 'quick-create-reference-image' : 'upload'),
+                ]
+            );
 
             $result = ['url' => $url];
             if ($isWorkerReference) {
@@ -92,9 +78,7 @@ class UploadController extends BaseController
         $isQuickCreateReference = $purpose === 'quick_create';
 
         try {
-            $maxVideoBytes = $isQuickCreateReference && SupabaseStorage::isEnabledForQuickCreate()
-                ? min(50 * 1024 * 1024, SupabaseStorage::maxBytes())
-                : 50 * 1024 * 1024;
+            $maxVideoBytes = 50 * 1024 * 1024;
             validate(['file' => [
                 'fileSize' => $maxVideoBytes,
                 'fileExt' => 'mp4,mov',
@@ -103,27 +87,15 @@ class UploadController extends BaseController
 
             $originalName = method_exists($file, 'getOriginalName') ? (string) $file->getOriginalName() : 'reference.mp4';
             $metadata = $this->probeMiniMaxReferenceVideo($file->getPathname());
-            if ($isQuickCreateReference && SupabaseStorage::isEnabledForQuickCreate()) {
-                $url = SupabaseStorage::uploadLocalFile(
-                    $file->getPathname(),
-                    'quick-create/references/videos',
-                    $originalName,
-                    [
-                        'user_id' => $this->currentUserId(),
-                        'source' => 'quick-create-reference-video',
-                    ]
-                );
-            } else {
-                $url = MediaStorage::uploadLocalFile(
-                    $file->getPathname(),
-                    $isQuickCreateReference ? 'uploads/quick-create/videos' : 'uploads/video-references',
-                    $originalName,
-                    [
-                        'user_id' => $this->currentUserId(),
-                        'source' => $isQuickCreateReference ? 'quick-create-reference-video' : 'minimax-reference-video',
-                    ]
-                );
-            }
+            $url = MediaStorage::uploadLocalFile(
+                $file->getPathname(),
+                $isQuickCreateReference ? 'uploads/quick-create/videos' : 'uploads/video-references',
+                $originalName,
+                [
+                    'user_id' => $this->currentUserId(),
+                    'source' => $isQuickCreateReference ? 'quick-create-reference-video' : 'minimax-reference-video',
+                ]
+            );
 
             return successCode([
                 'url' => $url,

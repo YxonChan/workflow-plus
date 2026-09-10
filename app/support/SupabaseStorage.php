@@ -8,9 +8,13 @@ final class SupabaseStorage
 {
     private const DEFAULT_MAX_BYTES = 50_000_000;
 
+    /**
+     * 历史开关：速创已统一本站 MediaStorage，调用方不再依赖此返回值。
+     * 保留方法以免旧脚本/探测代码直接 fatal。
+     */
     public static function isEnabledForQuickCreate(): bool
     {
-        return strtolower(trim((string) env('QUICK_CREATE_STORAGE_DRIVER', 'local'))) === 'supabase';
+        return false;
     }
 
     public static function maxBytes(): int

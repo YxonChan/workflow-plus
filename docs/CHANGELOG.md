@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2026-09-10
+
+- 速创参考图/参考视频与成片统一本站 `MediaStorage` 落盘，不再写入 Supabase；避免 ToAPIs 人像入库跨海拉取外链超时（`DownloadFailed` / TOS deadline）。
+- 人像入库 `source_url`：本站 `/storage/` 优先本地直传或 `MEDIA_PUBLIC_BASE_URL`；历史 Supabase 等外链先中转上传到 ToAPIs 再入库。
+- `SupabaseStorage::isEnabledForQuickCreate()` 固定返回 false；环境默认 `QUICK_CREATE_STORAGE_DRIVER=local`。
+
 ## 2026-09-09
 
 - 修复刷新后历史参考图“人脸已通过”状态条脱离缩略图定位并横向撑满页面的问题。

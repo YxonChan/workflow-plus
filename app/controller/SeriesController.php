@@ -34,7 +34,6 @@ use app\support\CharacterAssetClassifier;
 use app\support\ImageGenerationOptions;
 use app\support\ModelConfigResolver;
 use app\support\MediaStorage;
-use app\support\SupabaseStorage;
 use app\support\NovelImportService;
 use app\support\PromoVideoSegmentConfig;
 use app\support\RedisCache;
@@ -15607,13 +15606,7 @@ PROMPT;
 
     private function persistGeneratedVideoUrl(string $url, array $context = [], array $downloadHeaders = []): string
     {
-        if ((string) ($context['source'] ?? '') === 'quick_create_video' && SupabaseStorage::isEnabledForQuickCreate()) {
-            return SupabaseStorage::persistRemoteUrl($url, 'generated/quick-create/videos', [
-                'user_id' => (int) ($context['user_id'] ?? 0),
-                'source' => 'quick-create-generated-video',
-            ], $downloadHeaders);
-        }
-
+        // 速创成片与作品视频统一本站落盘，不再分流 Supabase。
         return MediaStorage::persistRemoteUrl($url, 'generated/videos', $this->mediaStorageContext($context, 'video'), $downloadHeaders);
     }
 

@@ -397,28 +397,68 @@ class ToapisPrivateAvatarService
     }
 
     /**
+     * 解析 ToAPIs private-avatar 可用的 source_url。
+     * 优先本站本地文件直传；本站公网域可直传 URL；Supabase 等外链先中转上传，避免对方跨海拉图超时。
+     *
      * @param array{api_key:string,base:string,endpoint:string} $creds
      */
     private function resolvePublicSourceUrl(string $url, array $creds): string
     {
         $url = trim($url);
-        if (preg_match('#^https?://#i', $url) === 1) {
-            return $url;
+        if ($url === '') {
+            throw new \RuntimeException('造型展示图为空，无法人像入库');
         }
+
+        $localUploaded = $this->uploadLocalImage($url, $creds);
+        if ($localUploaded !== '') {
+            return $localUploaded;
+        }
+
+        if (preg_match('#^https?://#i', $url) === 1) {
+            if ($this->isTrustedPublicMediaUrl($url)) {
+                return $url;
+            }
+            $relayed = $this->uploadRemoteImage($url, $creds);
+            if ($relayed !== '') {
+                return $relayed;
+            }
+            throw new \RuntimeException('外链图片无法中转到人像服务，请改用本站上传图后重试');
+        }
+
         $path = (string) (parse_url($url, PHP_URL_PATH) ?: $url);
-        if (str_starts_with($path, '/storage/')) {
+        if ($this->isLocalStoragePath($path)) {
             $baseUrl = rtrim(trim((string) env('MEDIA_PUBLIC_BASE_URL', '')), '/');
             if ($baseUrl !== '') {
                 return $baseUrl . $path;
             }
         }
 
-        $uploaded = $this->uploadLocalImage($url, $creds);
-        if ($uploaded === '') {
-            throw new \RuntimeException('造型图没有公网地址，无法人像入库。请配置 MEDIA_PUBLIC_BASE_URL');
+        throw new \RuntimeException('造型图没有公网地址，无法人像入库。请配置 MEDIA_PUBLIC_BASE_URL');
+    }
+
+    /**
+     * 本站 MEDIA_PUBLIC_BASE_URL / APP_URL 下的 /storage/ 媒体，ToAPIs 可直拉。
+     */
+    private function isTrustedPublicMediaUrl(string $url): bool
+    {
+        $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
+        if (!$this->isLocalStoragePath($path)) {
+            return false;
+        }
+        foreach ([env('MEDIA_PUBLIC_BASE_URL', ''), env('APP_URL', '')] as $base) {
+            $base = rtrim(trim((string) $base), '/');
+            if ($base !== '' && str_starts_with($url, $base . '/storage/')) {
+                return true;
+            }
         }
 
-        return $uploaded;
+        return false;
+    }
+
+    private function isLocalStoragePath(string $path): bool
+    {
+        // Supabase 公网路径也是 /storage/v1/object/...，不能当成本站磁盘路径。
+        return str_starts_with($path, '/storage/') && !str_starts_with($path, '/storage/v1/');
     }
 
     /**
@@ -430,11 +470,98 @@ class ToapisPrivateAvatarService
         if ($path === '' || !is_file($path)) {
             return '';
         }
+
+        return $this->uploadImageFileToToapis($path, $creds, basename($path));
+    }
+
+    /**
+     * 下载外链图片后上传到 ToAPIs，返回对方托管 URL。
+     *
+     * @param array{api_key:string,base:string,endpoint:string} $creds
+     */
+    private function uploadRemoteImage(string $url, array $creds): string
+    {
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'toapis-avatar-');
+        if ($temporaryPath === false) {
+            return '';
+        }
+        $downloadPath = $temporaryPath . '.img';
+        @unlink($temporaryPath);
+
+        try {
+            $stream = fopen($downloadPath, 'wb');
+            if ($stream === false) {
+                return '';
+            }
+            $maxBytes = 20 * 1024 * 1024;
+            $downloaded = 0;
+            $writeFailed = false;
+            $ch = curl_init($url);
+            if ($ch === false) {
+                fclose($stream);
+                return '';
+            }
+            curl_setopt_array($ch, [
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 5,
+                CURLOPT_RETURNTRANSFER => false,
+                CURLOPT_CONNECTTIMEOUT => 20,
+                CURLOPT_TIMEOUT => 90,
+                CURLOPT_WRITEFUNCTION => static function ($handle, string $chunk) use (&$downloaded, &$writeFailed, $stream, $maxBytes): int {
+                    $length = strlen($chunk);
+                    if ($downloaded + $length > $maxBytes) {
+                        $writeFailed = true;
+
+                        return 0;
+                    }
+                    $written = fwrite($stream, $chunk);
+                    if ($written === false || $written !== $length) {
+                        $writeFailed = true;
+
+                        return 0;
+                    }
+                    $downloaded += $written;
+
+                    return $written;
+                },
+            ]);
+            curl_exec($ch);
+            $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $errno = (int) curl_errno($ch);
+            curl_close($ch);
+            fclose($stream);
+
+            if ($writeFailed || $errno !== 0 || $http < 200 || $http >= 300 || $downloaded <= 0 || !is_file($downloadPath)) {
+                return '';
+            }
+
+            $name = basename((string) (parse_url($url, PHP_URL_PATH) ?: 'remote.png'));
+            if ($name === '' || !str_contains($name, '.')) {
+                $name = 'remote.png';
+            }
+
+            return $this->uploadImageFileToToapis($downloadPath, $creds, $name);
+        } finally {
+            if (is_file($downloadPath)) {
+                @unlink($downloadPath);
+            }
+        }
+    }
+
+    /**
+     * @param array{api_key:string,base:string,endpoint:string} $creds
+     */
+    private function uploadImageFileToToapis(string $path, array $creds, string $filename): string
+    {
+        if (!is_file($path) || filesize($path) <= 0) {
+            return '';
+        }
         $mime = 'image/png';
         $info = @getimagesize($path);
         if (is_array($info) && isset($info['mime']) && is_string($info['mime']) && str_starts_with($info['mime'], 'image/')) {
             $mime = $info['mime'];
         }
+        $safeName = preg_replace('/[^a-zA-Z0-9._-]+/', '_', $filename) ?: 'image.png';
         $uploadEndpoint = rtrim($creds['base'], '/') . '/v1/uploads/images';
         $ch = curl_init($uploadEndpoint);
         if ($ch === false) {
@@ -448,7 +575,7 @@ class ToapisPrivateAvatarService
             CURLOPT_TIMEOUT => 60,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_POSTFIELDS => [
-                'file' => new \CURLFile($path, $mime, basename($path)),
+                'file' => new \CURLFile($path, $mime, $safeName),
             ],
         ]);
         $response = curl_exec($ch);
@@ -478,10 +605,11 @@ class ToapisPrivateAvatarService
             return '';
         }
         $path = (string) (parse_url($url, PHP_URL_PATH) ?: $url);
-        if (!str_starts_with($path, '/storage/')) {
+        if (!$this->isLocalStoragePath($path)) {
             return '';
         }
         $relative = ltrim(substr($path, strlen('/storage/')), '/');
+        $relative = rawurldecode($relative);
         $candidates = [
             root_path() . 'public/storage/' . $relative,
             root_path() . 'storage/' . $relative,
