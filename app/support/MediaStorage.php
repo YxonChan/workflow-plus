@@ -73,6 +73,7 @@ class MediaStorage
         if (!copy($localPath, $absolutePath) || !is_file($absolutePath) || filesize($absolutePath) <= 0) {
             throw new \RuntimeException('保存上传文件失败');
         }
+        self::ensurePublicReadable($absolutePath);
 
         return self::publicUrl($relativePath);
     }
@@ -158,6 +159,7 @@ class MediaStorage
         if (!is_file($absolutePath) || filesize($absolutePath) <= 0) {
             throw new \RuntimeException('保存媒体文件校验失败');
         }
+        self::ensurePublicReadable($absolutePath);
 
         return self::publicUrl($relativePath);
     }
@@ -184,6 +186,7 @@ class MediaStorage
         if (!is_file($absolutePath) || filesize($absolutePath) <= 0) {
             throw new \RuntimeException('保存媒体文件校验失败');
         }
+        self::ensurePublicReadable($absolutePath);
 
         return self::publicUrl($relativePath);
     }
@@ -339,6 +342,24 @@ class MediaStorage
     private static function publicRoot(): string
     {
         return rtrim(app()->getRootPath(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'storage';
+    }
+
+
+    private static function ensurePublicReadable(string $absolutePath): void
+    {
+        @chmod($absolutePath, 0664);
+        $dir = dirname($absolutePath);
+        for ($i = 0; $i < 8; $i++) {
+            if ($dir === '' || $dir === '/' || !str_contains($dir, DIRECTORY_SEPARATOR . 'storage')) {
+                break;
+            }
+            @chmod($dir, 0775);
+            $parent = dirname($dir);
+            if ($parent === $dir) {
+                break;
+            }
+            $dir = $parent;
+        }
     }
 
     private static function publicUrl(string $relativePath): string

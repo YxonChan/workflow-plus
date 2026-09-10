@@ -66,6 +66,7 @@ systemctl restart \
   'ai-workflow-worker@episode-node:worker' \
   'ai-workflow-worker@video-job:worker' \
   'ai-workflow-worker@quick-create:worker' \
+  'ai-workflow-worker@quick-create:face-worker' \
   'ai-workflow-worker@script-creation:worker' \
   'ai-workflow-worker@agent-task:worker'
 

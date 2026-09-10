@@ -1,19 +1,5 @@
 # syntax=docker/dockerfile:1.7
 
-# The chialab image ships Composer and the same PHP extensions used at runtime,
-# so dependency resolution validates the actual production platform.
-FROM chialab/php:8.2-fpm AS composer-deps
-WORKDIR /src
-COPY composer.json composer.lock ./
-RUN composer config -g repos.packagist composer https://mirrors.cloud.tencent.com/composer/
-RUN composer install \
-    --no-dev \
-    --no-interaction \
-    --no-progress \
-    --prefer-dist \
-    --optimize-autoloader \
-    --no-scripts
-
 FROM node:22-alpine AS frontend-build
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
@@ -37,7 +23,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /var/www/html
-COPY --from=composer-deps /src/vendor ./vendor
+COPY vendor ./vendor
 COPY . ./
 COPY --from=frontend-build /src/public/admin ./public/admin
 

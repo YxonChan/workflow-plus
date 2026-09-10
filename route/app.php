@@ -154,6 +154,9 @@ Route::group('api', function () {
     Route::post('quick-create/messages/send', 'QuickCreateController/send');
     Route::post('quick-create/messages/edit', 'QuickCreateController/edit');
     Route::post('quick-create/messages/status', 'QuickCreateController/status');
+    Route::post('quick-create/face-verification', 'QuickCreateController/faceVerification');
+    Route::post('quick-create/face-verification/status', 'QuickCreateController/faceVerificationStatus');
+    Route::get('quick-create/face-verification/stream', 'QuickCreateController/faceVerificationStream');
 
     // AI 驱动剧本创作
     Route::post('script-creation/configs', 'ScriptCreationController/configs');

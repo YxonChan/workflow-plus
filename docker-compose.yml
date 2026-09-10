@@ -103,6 +103,9 @@ services:
   quick-create-worker:
     <<: *worker
     command: ["php", "think", "quick-create:worker", "--sleep=2", "--cooldown=3", "--max-concurrency=2", "--stale-minutes=20", "--pending-timeout-minutes=20"]
+  quick-create-face-worker:
+    <<: *worker
+    command: ["php", "think", "quick-create:face-worker", "--sleep=2", "--stale-minutes=20"]
   script-creation-worker:
     <<: *worker
     command: ["php", "think", "script-creation:worker", "--sleep=2", "--stale-minutes=30"]

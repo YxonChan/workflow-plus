@@ -347,6 +347,7 @@ reload_runtime() {
     'ai-workflow-worker@episode-workflow:worker'
     'ai-workflow-worker@episode-node:worker'
     'ai-workflow-worker@quick-create:worker'
+    'ai-workflow-worker@quick-create:face-worker'
     'ai-workflow-worker@script-creation:worker'
     'ai-workflow-worker@agent-task:worker'
   )

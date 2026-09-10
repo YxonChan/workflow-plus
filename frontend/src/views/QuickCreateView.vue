@@ -10,9 +10,13 @@ import {
   pollQuickCreateMessages,
   editQuickCreateMessage,
   sendQuickCreateMessage,
+  startFaceVerification,
+  pollFaceVerifications,
+  faceVerificationStreamUrl,
   type QuickCreateAssetRef,
   type QuickCreateMessage,
   type QuickCreateMode,
+  type FaceVerification,
 } from '@/api/quickCreate'
 import { request } from '@/api/http'
 import type { Asset, AssetImage, ModelConfig, ModelConfigGroup, Series } from '@/types'
@@ -81,8 +85,14 @@ interface PendingRef {
   url: string
   media_type: 'image' | 'video'
   duration_seconds?: number
+  face_verification?: FaceVerification
 }
 const pendingRefs = ref<PendingRef[]>([])
+const faceVerificationSources = new Map<number, EventSource>()
+const faceVerificationPolls = new Set<number>()
+const faceVerificationFallbacks = new Map<number, number>()
+const faceVerificationSubmitting = new Set<string>()
+const faceVerificationNotices = new Map<number, FaceVerification['status']>()
 const pendingRefImageUrls = computed(() => pendingRefs.value.filter((r) => r.media_type === 'image').map((r) => r.url))
 let isComposingPrompt = false
 let skipPendingRefRender = false
@@ -654,6 +664,13 @@ onBeforeUnmount(() => {
   if (sendCooldownTimer) clearTimeout(sendCooldownTimer)
   if (referenceHoverHideTimer) clearTimeout(referenceHoverHideTimer)
   videoObserver?.disconnect()
+  faceVerificationSources.forEach((source) => source.close())
+  faceVerificationSources.clear()
+  faceVerificationPolls.clear()
+  faceVerificationFallbacks.forEach((timer) => window.clearInterval(timer))
+  faceVerificationFallbacks.clear()
+  faceVerificationSubmitting.clear()
+  faceVerificationNotices.clear()
   videoObserver = null
 })
 
@@ -1288,6 +1305,8 @@ function pickMentionEntry(entry: MentionEntry) {
 }
 
 function removeRef(key: string) {
+  const removed = pendingRefs.value.find((ref) => ref.key === key)
+  if (removed?.face_verification?.id) stopFaceVerificationStream(removed.face_verification.id)
   pendingRefs.value = pendingRefs.value.filter((r) => r.key !== key)
 }
 
@@ -1450,6 +1469,7 @@ async function uploadReferenceFiles(files: File[]) {
           url: res.url,
           media_type: isVideo ? 'video' : 'image',
           duration_seconds: res.duration_seconds,
+          face_verification: undefined,
         })
         uploadedCount += 1
       } catch (err: unknown) {
@@ -1470,6 +1490,151 @@ function uploadReference() {
     return
   }
   uploadInputRef.value?.click()
+}
+
+function faceUrlKey(url: string): string {
+  const raw = String(url || '').trim()
+  if (!raw) return ''
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      return new URL(raw).pathname || raw
+    }
+  } catch {
+    /* keep raw */
+  }
+  return raw
+}
+
+function isFaceVerificationBusy(ref: PendingRef): boolean {
+  const status = ref.face_verification?.status
+  return status === 'queued' || status === 'running' || faceVerificationSubmitting.has(ref.key)
+}
+
+function isFaceVerificationLocked(ref: PendingRef): boolean {
+  return isFaceVerificationBusy(ref) || ref.face_verification?.status === 'passed'
+}
+
+function faceVerificationButtonText(ref: PendingRef): string {
+  const status = ref.face_verification?.status
+  if (status === 'passed') return t('人脸已通过')
+  if (status === 'failed') return t('检测失败，重试')
+  if (status === 'queued' || status === 'running' || faceVerificationSubmitting.has(ref.key)) return t('检测中')
+  return t('检测人脸')
+}
+
+function notifyFaceVerification(result: FaceVerification) {
+  if (!result.id) return
+  const previous = faceVerificationNotices.get(result.id)
+  if (previous === result.status) return
+  faceVerificationNotices.set(result.id, result.status)
+
+  // 缓存命中「已通过」时按钮态已足够；仅在真正从排队/检测中变为通过时提示。
+  if (result.status === 'passed') {
+    if (previous === 'queued' || previous === 'running') {
+      ElMessage.success(result.message || t('人脸检测已通过'))
+    }
+    return
+  }
+  if (result.status === 'failed') {
+    ElMessage.error(result.message || t('人脸检测失败'))
+    return
+  }
+  if ((result.status === 'queued' || result.status === 'running') && previous !== 'queued' && previous !== 'running') {
+    ElMessage.info(t('人脸检测已加入队列'))
+  }
+}
+
+function stopFaceVerificationStream(id: number) {
+  const source = faceVerificationSources.get(id)
+  source?.close()
+  faceVerificationSources.delete(id)
+  faceVerificationPolls.delete(id)
+  const timer = faceVerificationFallbacks.get(id)
+  if (timer) window.clearInterval(timer)
+  faceVerificationFallbacks.delete(id)
+}
+
+function applyFaceVerification(result: FaceVerification, preferRefKey?: string) {
+  const resultUrlKey = faceUrlKey(result.source_url)
+  let matched = false
+  pendingRefs.value = pendingRefs.value.map((ref) => {
+    const byId = Boolean(result.id) && ref.face_verification?.id === result.id
+    const byKey = Boolean(preferRefKey) && ref.key === preferRefKey
+    const byUrl = Boolean(resultUrlKey) && faceUrlKey(ref.url) === resultUrlKey
+    if (!byId && !byKey && !byUrl) return ref
+    matched = true
+    return { ...ref, face_verification: result }
+  })
+  if (!matched && preferRefKey) {
+    pendingRefs.value = pendingRefs.value.map((ref) => (
+      ref.key === preferRefKey ? { ...ref, face_verification: result } : ref
+    ))
+  }
+  notifyFaceVerification(result)
+  if (result.status === 'passed' || result.status === 'failed') stopFaceVerificationStream(result.id)
+}
+
+function pollFaceVerification(id: number) {
+  if (faceVerificationPolls.has(id)) return
+  faceVerificationPolls.add(id)
+  void pollFaceVerifications([id]).then((res) => {
+    const result = res.verifications?.[0]
+    if (result) applyFaceVerification(result)
+  }).catch(() => undefined).finally(() => faceVerificationPolls.delete(id))
+}
+
+function subscribeFaceVerification(id: number) {
+  stopFaceVerificationStream(id)
+  if (typeof EventSource === 'undefined') {
+    const timer = window.setInterval(() => pollFaceVerification(id), 2000)
+    window.setTimeout(() => window.clearInterval(timer), 180000)
+    return
+  }
+  const source = new EventSource(faceVerificationStreamUrl(id))
+  faceVerificationSources.set(id, source)
+  source.addEventListener('face_verification', (event) => {
+    try { applyFaceVerification(JSON.parse((event as MessageEvent).data) as FaceVerification) } catch { /* ignore malformed event */ }
+  })
+  source.onerror = () => {
+    pollFaceVerification(id)
+    if (!faceVerificationFallbacks.has(id)) {
+      const timer = window.setInterval(() => pollFaceVerification(id), 2000)
+      faceVerificationFallbacks.set(id, timer)
+    }
+  }
+}
+
+async function verifyPendingRef(ref: PendingRef) {
+  if (ref.media_type !== 'image' || isFaceVerificationBusy(ref) || ref.face_verification?.status === 'passed') return
+  faceVerificationSubmitting.add(ref.key)
+  pendingRefs.value = pendingRefs.value.map((item) => (
+    item.key === ref.key
+      ? {
+          ...item,
+          face_verification: {
+            id: item.face_verification?.id ?? 0,
+            status: 'queued',
+            source_url: item.url,
+            message: item.face_verification?.message,
+          },
+        }
+      : item
+  ))
+  try {
+    const res = await startFaceVerification(ref.url)
+    applyFaceVerification(res.verification, ref.key)
+    if (res.verification.status === 'queued' || res.verification.status === 'running') {
+      subscribeFaceVerification(res.verification.id)
+    }
+  } catch {
+    pendingRefs.value = pendingRefs.value.map((item) => {
+      if (item.key !== ref.key) return item
+      if (item.face_verification?.id) return item
+      return { ...item, face_verification: undefined }
+    })
+  } finally {
+    faceVerificationSubmitting.delete(ref.key)
+  }
 }
 
 function handleUploadInput(event: Event) {
@@ -1514,7 +1679,13 @@ function refillQuickCreateInput(message: QuickCreateMessage) {
       url: ref.image_url || ref.video_url || '',
       media_type: ref.media_type === 'video' || Boolean(ref.video_url) ? 'video' : 'image',
       duration_seconds: ref.duration_seconds,
+      face_verification: ref.face_verification,
     }))
+  pendingRefs.value
+    .map((ref) => ref.face_verification)
+    .filter((verification): verification is FaceVerification => Boolean(verification?.id))
+    .filter((verification) => verification.status === 'queued' || verification.status === 'running')
+    .forEach((verification) => subscribeFaceVerification(verification.id))
 
   aspectRatio.value = options.aspect_ratio || 'adaptive'
   count.value = Number(options.count) > 0 ? Number(options.count) : 1
@@ -1577,6 +1748,7 @@ async function send() {
               name: r.name,
               media_type: r.media_type,
               duration_seconds: r.duration_seconds,
+              ...(r.face_verification?.id ? { face_verification_id: r.face_verification.id } : {}),
               reference_alias: pendingReferenceAlias(r, index),
             },
       ),
@@ -1872,6 +2044,22 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
                     <el-icon :size="24"><component :is="resolveIcon('VideoPlay')" /></el-icon>
                   </span>
                 </button>
+                <span
+                  v-if="ref.face_verification?.status"
+                  class="qc-ref-face-status"
+                  :class="`is-${ref.face_verification.status}`"
+                  :title="ref.face_verification.message || (
+                    ref.face_verification.status === 'passed' ? t('人脸已通过')
+                      : ref.face_verification.status === 'failed' ? t('人脸检测失败')
+                        : t('检测中')
+                  )"
+                >
+                  {{
+                    ref.face_verification.status === 'passed' ? t('人脸已通过')
+                      : ref.face_verification.status === 'failed' ? t('人脸检测失败')
+                        : t('检测中')
+                  }}
+                </span>
                 <span class="qc-ref-thumb-name">@{{ ref.name }}</span>
               </div>
             </div>
@@ -2206,6 +2394,22 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
             <el-icon :size="10"><component :is="resolveIcon('Check')" /></el-icon>
             {{ t('已上传') }}
           </span>
+          <button
+            v-if="ref.media_type === 'image' && ref.kind === 'upload'"
+            type="button"
+            class="qc-face-btn"
+            :class="{
+              'is-passed': ref.face_verification?.status === 'passed',
+              'is-running': isFaceVerificationBusy(ref),
+              'is-failed': ref.face_verification?.status === 'failed',
+            }"
+            :disabled="isFaceVerificationLocked(ref)"
+            :aria-busy="isFaceVerificationBusy(ref)"
+            :title="ref.face_verification?.message || faceVerificationButtonText(ref)"
+            @click.stop="verifyPendingRef(ref)"
+          >
+            <span>{{ faceVerificationButtonText(ref) }}</span>
+          </button>
           <span class="qc-pending-ref-name">{{ ref.name }}</span>
         </div>
       </div>
@@ -2802,6 +3006,7 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
 }
 
 .qc-ref-thumb-wrap {
+  position: relative;
   width: 56px;
   flex-shrink: 0;
 
@@ -3335,6 +3540,86 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
   font-size: 9px;
   line-height: 16px;
   pointer-events: none;
+}
+
+.qc-face-btn {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 22px;
+  min-height: 18px;
+  border: 0;
+  border-radius: 4px;
+  padding: 1px 3px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #fff;
+  font-size: 9px;
+  line-height: 16px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.qc-face-btn.is-running {
+  background: rgba(37, 99, 235, 0.9);
+  cursor: wait;
+  opacity: 0.92;
+}
+
+.qc-face-btn.is-passed {
+  background: rgba(22, 101, 52, 0.92);
+  cursor: default;
+  opacity: 1;
+}
+
+.qc-face-btn.is-failed {
+  background: rgba(185, 28, 28, 0.92);
+}
+
+.qc-face-btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.qc-face-btn.is-running:disabled {
+  cursor: wait;
+  opacity: 0.92;
+}
+
+.qc-face-btn.is-passed:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.qc-ref-face-status {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 22px;
+  overflow: hidden;
+  color: #fff;
+  font-size: 9px;
+  line-height: 16px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(37, 99, 235, 0.9);
+  border-radius: 4px;
+}
+
+.qc-ref-face-status.is-passed {
+  background: rgba(22, 101, 52, 0.88);
+}
+
+.qc-ref-face-status.is-failed {
+  background: rgba(185, 28, 28, 0.9);
+}
+
+.qc-ref-face-status.is-queued,
+.qc-ref-face-status.is-running {
+  background: rgba(37, 99, 235, 0.9);
 }
 
 .qc-input-row {

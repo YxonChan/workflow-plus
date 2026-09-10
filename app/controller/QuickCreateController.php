@@ -7,6 +7,7 @@ namespace app\controller;
 use app\BaseController;
 use app\model\Asset;
 use app\model\AssetImage;
+use app\model\QuickCreateFaceVerification;
 use app\model\ModelConfig;
 use app\model\QuickCreateMessage;
 use app\model\User;
@@ -15,6 +16,9 @@ use app\support\ImageProviderTaskState;
 use app\support\MediaStorage;
 use app\support\ModelConfigResolver;
 use app\support\PendingImageTaskException;
+use app\support\ToapisPrivateAvatarService;
+use app\support\RedisCache;
+use think\facade\Db;
 
 /**
  * 灵感速创：对话式快速生成图片/视频。
@@ -27,6 +31,111 @@ class QuickCreateController extends BaseController
     private const MAX_REFS = 6;
     private const MAX_COUNT = 4;
     private const HISTORY_LIMIT = 100;
+    /** @var array<int, QuickCreateFaceVerification|null> */
+    private array $faceVerificationCache = [];
+
+    public function faceVerification()
+    {
+        $userId = $this->currentUserId();
+        $url = $this->canonicalizeStorageUrl(trim((string) ($this->request->param('url') ?? '')));
+        if ($url === '' || (!str_starts_with($url, '/') && !preg_match('#^https?://#i', $url))) {
+            abort(422, '图片地址无效');
+        }
+        $sourceHash = hash('sha256', $url);
+        $existing = Db::transaction(function () use ($userId, $url, $sourceHash): ?QuickCreateFaceVerification {
+            return QuickCreateFaceVerification::where('user_id', $userId)
+                ->where('source_hash', $sourceHash)
+                ->whereIn('status', ['queued', 'running', 'passed', 'failed'])
+                ->order(['id' => 'desc'])
+                ->lock(true)
+                ->find();
+        });
+        if ($existing instanceof QuickCreateFaceVerification) {
+            if ((string) $existing->getAttr('status') === 'failed') {
+                $existing->save([
+                    'status' => 'queued',
+                    'asset_id' => 0,
+                    'asset_image_id' => 0,
+                    'asset_json' => [],
+                    'asset_url' => '',
+                    'error_message' => '',
+                    'started_at' => null,
+                    'finished_at' => null,
+                ]);
+                $existing->setAttr('status', 'queued');
+                $existing->setAttr('asset_id', 0);
+                $existing->setAttr('asset_image_id', 0);
+                $existing->setAttr('asset_json', []);
+                $existing->setAttr('asset_url', '');
+                $existing->setAttr('error_message', '');
+                $existing->setAttr('started_at', null);
+                $existing->setAttr('finished_at', null);
+            }
+            $message = (string) $existing->getAttr('status') === 'passed' ? '人脸已通过' : '人脸检测已在处理中';
+            return successCode(['verification' => $this->serializeFaceVerification($existing)], $message, (string) $existing->getAttr('status') === 'passed' ? 200 : 202);
+        }
+        $task = QuickCreateFaceVerification::create([
+            'user_id' => $userId, 'source_url' => $url, 'source_hash' => $sourceHash, 'status' => 'queued',
+            'asset_json' => [], 'asset_url' => '', 'error_message' => '',
+        ]);
+        return successCode(['verification' => $this->serializeFaceVerification($task)], '人脸检测已加入队列', 202);
+    }
+
+    public function faceVerificationStream()
+    {
+        $id = (int) ($this->request->param('id') ?? 0);
+        $userId = $this->currentUserId();
+        if ($id <= 0 || !QuickCreateFaceVerification::where('id', $id)->where('user_id', $userId)->find()) {
+            return response('检测任务不存在', 404);
+        }
+        @set_time_limit(0); @ini_set('zlib.output_compression', '0'); @ini_set('output_buffering', '0');
+        while (ob_get_level() > 0) { @ob_end_flush(); }
+        if (!headers_sent()) { header('Content-Type: text/event-stream; charset=utf-8'); header('Cache-Control: no-cache, no-transform'); header('Connection: keep-alive'); header('X-Accel-Buffering: no'); }
+        $last = -1; $started = time(); echo "retry: 2000\n\n";
+        while (!connection_aborted() && time() - $started < 180) {
+            $version = RedisCache::version('quick_create_face:' . $id);
+            if ($version !== $last) {
+                $task = QuickCreateFaceVerification::where('id', $id)->where('user_id', $userId)->find();
+                if (!$task instanceof QuickCreateFaceVerification) break;
+                echo "event: face_verification\n" . 'data: ' . json_encode($this->serializeFaceVerification($task), JSON_UNESCAPED_UNICODE) . "\n\n";
+                $last = $version;
+                if (in_array((string) $task->getAttr('status'), ['passed', 'failed'], true)) { @ob_flush(); @flush(); break; }
+            } else { echo ": heartbeat\n\n"; }
+            @ob_flush(); @flush(); sleep(1);
+        }
+        exit;
+    }
+
+    public function faceVerificationStatus()
+    {
+        $ids = array_values(array_filter(array_map('intval', (array) ($this->request->param('ids') ?? []))));
+        if ($ids === []) {
+            return successCode(['verifications' => []]);
+        }
+        $rows = QuickCreateFaceVerification::where('user_id', $this->currentUserId())->whereIn('id', array_slice($ids, 0, 50))->select();
+        return successCode(['verifications' => array_map(fn (QuickCreateFaceVerification $row): array => $this->serializeFaceVerification($row), $rows->all())]);
+    }
+
+    public function runQueuedFaceVerification(int $taskId): void
+    {
+        $task = QuickCreateFaceVerification::find($taskId);
+        if (!$task instanceof QuickCreateFaceVerification) return;
+        $userId = (int) $task->getAttr('user_id'); $url = trim((string) $task->getAttr('source_url'));
+        try {
+            $asset = Asset::create(['user_id' => $userId, 'series_id' => 0, 'type' => 'character', 'name' => '速创人脸-' . $taskId, 'description' => '速创上传图片人脸验证', 'tags' => ['quick_create_face'], 'is_hidden' => 1, 'sort' => 0, 'toapis_group_id' => '']);
+            $image = AssetImage::create(['user_id' => $userId, 'asset_id' => (int) $asset->getAttr('id'), 'view_type' => 'look', 'url' => $url, 'note' => '速创上传图片', 'image_prompt' => '', 'sort' => 0, 'reference_role' => 'look', 'variant_name' => '速创人脸', 'reference_key' => 'quick-create-face-' . $taskId, 'toapis_asset_id' => '', 'toapis_asset_url' => '', 'toapis_status' => 'processing', 'video_ref_url' => '']);
+            $result = (new ToapisPrivateAvatarService())->ingestLook($asset, $image, $url, $userId);
+            $payload = array_merge($result, [
+                'asset_id' => (int) $asset->getAttr('id'),
+                'asset_image_id' => (int) $image->getAttr('id'),
+                'asset_url' => (string) ($result['asset_url'] ?? ''),
+            ]);
+            $task->save(['asset_id' => $payload['asset_id'], 'asset_image_id' => $payload['asset_image_id'], 'asset_json' => $payload, 'asset_url' => $payload['asset_url'], 'status' => 'passed', 'error_message' => '', 'finished_at' => date('Y-m-d H:i:s')]);
+        } catch (\Throwable $e) {
+            $task->save(['status' => 'failed', 'error_message' => mb_substr($e->getMessage(), 0, 1800), 'finished_at' => date('Y-m-d H:i:s')]);
+        }
+        RedisCache::bumpVersion('quick_create_face:' . $taskId);
+    }
 
     private const ASPECT_RATIOS = ['', 'adaptive', '16:9', '9:16', '1:1', '4:3', '3:4', '21:9'];
     private const VIDEO_RESOLUTIONS = ['', '480p', '720p', '1080p', '768P', '2K'];
@@ -201,6 +310,9 @@ class QuickCreateController extends BaseController
                 'image_url' => $url,
                 'reference_alias' => 'image_' . (count($refs) + 1),
             ];
+            if (isset($sourceRef['face_verification']) && is_array($sourceRef['face_verification'])) {
+                $refs[count($refs) - 1]['face_verification'] = $sourceRef['face_verification'];
+            }
         }
 
         $options = $source->getAttr('options_json') ?: [];
@@ -483,6 +595,18 @@ class QuickCreateController extends BaseController
                 'reference_alias' => $referenceAlias,
             ];
             $ref[$mediaType === 'video' ? 'video_url' : 'image_url'] = $this->canonicalizeStorageUrl($url);
+            if ($mediaType === 'image') {
+                $verificationId = (int) ($item['face_verification_id'] ?? 0);
+                if ($verificationId > 0) {
+                    $verification = QuickCreateFaceVerification::where('id', $verificationId)
+                        ->where('user_id', $userId)
+                        ->where('source_url', $this->canonicalizeStorageUrl($url))
+                        ->find();
+                    if ($verification instanceof QuickCreateFaceVerification) {
+                        $ref['face_verification'] = $this->serializeFaceVerification($verification);
+                    }
+                }
+            }
             if ($mediaType === 'video') {
                 $ref['duration_seconds'] = max(0.0, (float) ($item['duration_seconds'] ?? 0));
             }
@@ -765,7 +889,16 @@ class QuickCreateController extends BaseController
     {
         $assets = [];
         foreach ($refs as $ref) {
-            $url = trim((string) ($ref['image_url'] ?? ''));
+            $verification = is_array($ref['face_verification'] ?? null)
+                ? $ref['face_verification']
+                : [];
+            $verifiedAssetUrl = strtolower((string) ($verification['status'] ?? '')) === 'passed'
+                ? trim((string) ($verification['asset_url'] ?? ''))
+                : '';
+            // 已通过人脸验证的速创图片必须复用 ToAPIs asset:// 资源，避免退回原始上传图。
+            $url = $verifiedAssetUrl !== ''
+                ? $verifiedAssetUrl
+                : trim((string) ($ref['image_url'] ?? ''));
             if ($url === '') {
                 continue;
             }
@@ -783,6 +916,11 @@ class QuickCreateController extends BaseController
 
     private function serialize(QuickCreateMessage $message): array
     {
+        $rawRefs = $message->getAttr('asset_refs_json');
+        $refs = $this->hydrateFaceVerificationRefs(
+            is_array($rawRefs) ? $rawRefs : [],
+            (int) $message->getAttr('user_id')
+        );
         return [
             'id' => (int) $message->getAttr('id'),
             'mode' => (string) $message->getAttr('mode'),
@@ -791,7 +929,7 @@ class QuickCreateController extends BaseController
             'parent_message_id' => $message->getAttr('parent_message_id') !== null ? (int) $message->getAttr('parent_message_id') : null,
             'parent_result_index' => $message->getAttr('parent_result_index') !== null ? (int) $message->getAttr('parent_result_index') : null,
             'edit_instruction' => (string) $message->getAttr('edit_instruction'),
-            'asset_refs' => $message->getAttr('asset_refs_json') ?: [],
+            'asset_refs' => $refs,
             'options' => $message->getAttr('options_json') ?: [],
             'status' => (string) $message->getAttr('status'),
             'result_urls' => $message->getAttr('result_urls_json') ?: [],
@@ -799,5 +937,67 @@ class QuickCreateController extends BaseController
             'create_time' => $message->getAttr('create_time'),
             'finished_at' => $message->getAttr('finished_at'),
         ];
+    }
+
+    private function serializeFaceVerification(QuickCreateFaceVerification $task): array
+    {
+        return [
+            'id' => (int) $task->getAttr('id'),
+            'status' => (string) $task->getAttr('status'),
+            'source_url' => (string) $task->getAttr('source_url'),
+            'asset_id' => (int) $task->getAttr('asset_id'),
+            'asset_image_id' => (int) $task->getAttr('asset_image_id'),
+            'asset_url' => (string) $task->getAttr('asset_url'),
+            'asset' => $task->getAttr('asset_json') ?: [],
+            'message' => (string) $task->getAttr('error_message'),
+            'verified_at' => $task->getAttr('finished_at'),
+        ];
+    }
+
+    private function hydrateFaceVerificationRefs(array $refs, int $userId): array
+    {
+        foreach ($refs as $index => $ref) {
+            if (!is_array($ref)) {
+                continue;
+            }
+
+            $id = (int) ($ref['face_verification']['id'] ?? 0);
+            if ($id > 0) {
+                if (!array_key_exists($id, $this->faceVerificationCache)) {
+                    $task = QuickCreateFaceVerification::where('id', $id)->where('user_id', $userId)->find();
+                    $this->faceVerificationCache[$id] = $task instanceof QuickCreateFaceVerification ? $task : null;
+                }
+                $task = $this->faceVerificationCache[$id];
+                if ($task instanceof QuickCreateFaceVerification) {
+                    $refs[$index]['face_verification'] = $this->serializeFaceVerification($task);
+                    continue;
+                }
+            }
+
+            // 历史消息可能未写入 face_verification；按图片地址回填已有检测结果，避免重新生成后还要再点一次。
+            $mediaType = (string) ($ref['media_type'] ?? ((isset($ref['video_url']) && $ref['video_url'] !== '') ? 'video' : 'image'));
+            if ($mediaType === 'video') {
+                continue;
+            }
+            $url = $this->canonicalizeStorageUrl(trim((string) ($ref['image_url'] ?? $ref['url'] ?? '')));
+            if ($url === '') {
+                continue;
+            }
+            $sourceHash = hash('sha256', $url);
+            $cacheKey = -crc32($userId . ':' . $sourceHash);
+            if (!array_key_exists($cacheKey, $this->faceVerificationCache)) {
+                $task = QuickCreateFaceVerification::where('user_id', $userId)
+                    ->where('source_hash', $sourceHash)
+                    ->order(['id' => 'desc'])
+                    ->find();
+                $this->faceVerificationCache[$cacheKey] = $task instanceof QuickCreateFaceVerification ? $task : null;
+            }
+            $task = $this->faceVerificationCache[$cacheKey];
+            if ($task instanceof QuickCreateFaceVerification) {
+                $refs[$index]['face_verification'] = $this->serializeFaceVerification($task);
+            }
+        }
+
+        return $refs;
     }
 }

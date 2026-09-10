@@ -14285,7 +14285,7 @@ PROMPT;
         $isMiniMax = $this->isMiniMaxVideoEndpoint($endpoint, $options);
         $prepared = [];
         foreach ($referenceImages as $url) {
-            $url = trim((string) $url);
+            $url = $this->unwrapVideoReferenceUrl((string) $url);
             if ($url === '') {
                 continue;
             }
@@ -14343,6 +14343,22 @@ PROMPT;
         }
 
         return $prepared;
+    }
+
+    /**
+     * 上游只接受裸 URL；清理历史记录或前端回填产生的 Markdown 链接包装。
+     */
+    private function unwrapVideoReferenceUrl(string $url): string
+    {
+        $url = trim($url);
+        if (preg_match('/^\[[^\]]*\]\((https?:\/\/[^)\s]+)\)$/i', $url, $matches) === 1) {
+            return trim($matches[1]);
+        }
+        if (preg_match('/^<((?:https?):\/\/[^>\s]+)>$/i', $url, $matches) === 1) {
+            return trim($matches[1]);
+        }
+
+        return $url;
     }
 
     private function applyVideoReferenceImagesToPayload(array &$payload, array $referenceImages, array $options): void

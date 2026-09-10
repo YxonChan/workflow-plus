@@ -14,6 +14,20 @@ export interface QuickCreateAssetRef {
   image_url?: string
   video_url?: string
   duration_seconds?: number
+  face_verification?: FaceVerification
+}
+
+export type FaceVerificationStatus = 'queued' | 'running' | 'passed' | 'failed'
+export interface FaceVerification {
+  id: number
+  status: FaceVerificationStatus
+  source_url: string
+  asset_id?: number
+  asset_image_id?: number
+  asset_url?: string
+  asset?: Record<string, unknown>
+  message?: string
+  verified_at?: string | null
 }
 
 export interface QuickCreateOptions {
@@ -54,6 +68,7 @@ export interface QuickCreateSendPayload {
     media_type?: 'image' | 'video'
     duration_seconds?: number
     reference_alias?: string
+    face_verification_id?: number
   }>
   options?: QuickCreateOptions
 }
@@ -69,6 +84,19 @@ const BASE = '/api/quick-create'
 export interface QuickCreateListParams {
   limit?: number
   before_id?: number
+}
+
+export function startFaceVerification(url: string): Promise<{ verification: FaceVerification }> {
+  return request({ method: 'POST', url: `${BASE}/face-verification`, data: { url } })
+}
+
+export function pollFaceVerifications(ids: number[]): Promise<{ verifications: FaceVerification[] }> {
+  return request({ method: 'POST', url: `${BASE}/face-verification/status`, data: { ids }, silent: true, timeout: 30_000 })
+}
+
+export function faceVerificationStreamUrl(id: number): string {
+  const token = localStorage.getItem('malulu.auth.token') || ''
+  return `${BASE}/face-verification/stream?id=${encodeURIComponent(String(id))}&token=${encodeURIComponent(token)}`
 }
 
 export interface QuickCreateListResult {
