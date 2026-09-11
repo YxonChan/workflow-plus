@@ -1,4 +1,4 @@
-# AI Workflow
+# 智梦工厂 Intelligent Dream Factory
 
 A professional AI cinematic pipeline built with ThinkPHP 8.0.
 
@@ -6,7 +6,7 @@ A professional AI cinematic pipeline built with ThinkPHP 8.0.
 [![PHP](https://img.shields.io/badge/php-%3E%3D%208.2-777bb4.svg)](https://www.php.net/)
 [![Framework](https://img.shields.io/badge/thinkphp-8.0-18bfff.svg)](https://github.com/top-think/framework)
 
-AI Workflow is a high-performance, containerized SaaS platform for AI-driven film and video production. It integrates scriptwriting, image generation, video synthesis, and voice-over into a single, cohesive workflow.
+智梦工厂 Intelligent Dream Factory is a high-performance, containerized SaaS platform for AI-driven film and video production. It integrates scriptwriting, image generation, video synthesis, and voice-over into a single, cohesive workflow.
 
 ## Key Features
 
@@ -99,4 +99,4 @@ The API follows standard RESTful conventions. Model configurations can be manage
 This project is open-sourced under the [Apache 2.0 license](LICENSE.txt).
 
 ---
-*Maintained by the AI Workflow Team.*
+*Maintained by the 智梦工厂 Intelligent Dream Factory Team.*

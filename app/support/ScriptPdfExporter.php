@@ -17,7 +17,7 @@ class ScriptPdfExporter
         }
 
         $title = trim((string) ($project['title'] ?? '')) ?: '未命名剧本';
-        $author = trim($author) ?: 'Xunboo';
+        $author = trim($author) ?: '智梦工厂';
         $isChinese = true;
 
         $tempDir = $this->tempDirectory();
@@ -34,7 +34,7 @@ class ScriptPdfExporter
         ]);
         $mpdf->SetTitle($title);
         $mpdf->SetAuthor($author);
-        $mpdf->SetCreator('Xunboo Script Creation');
+        $mpdf->SetCreator('智梦工厂 Intelligent Dream Factory');
         $mpdf->useSubstitutions = $isChinese;
         $mpdf->autoScriptToLang = $isChinese;
         $mpdf->autoLangToFont = $isChinese;

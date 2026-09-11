@@ -80,8 +80,8 @@ function goHome() {
   <aside class="app-sidebar" :class="{ 'is-collapsed': isRailCollapsed }">
     <!-- Top Brand：仅居中 logo -->
     <div class="sidebar-top">
-      <button type="button" class="brand" @click="goHome" :title="t('总览')" aria-label="Home">
-        <img class="brand-logo" :src="brandLogoUrl" alt="" width="96" height="96" draggable="false" />
+      <button type="button" class="brand" @click="goHome" :title="t('智梦工厂')" :aria-label="t('智梦工厂')">
+        <img class="brand-logo" :src="brandLogoUrl" :alt="t('智梦工厂')" width="96" height="96" draggable="false" />
       </button>
     </div>
 

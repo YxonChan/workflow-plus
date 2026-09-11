@@ -41,7 +41,11 @@ async function handleLogin() {
       <div class="login-brand">
         <div class="login-brand__inner">
           <div class="brand-lockup">
-            <img class="brand-mark" :src="brandLogoUrl" alt="" width="96" height="96" draggable="false" />
+            <img class="brand-mark" :src="brandLogoUrl" :alt="t('智梦工厂')" width="96" height="96" draggable="false" />
+            <div class="brand-name">
+              <span class="brand-name__zh">{{ t('智梦工厂') }}</span>
+              <span class="brand-name__en">Intelligent Dream Factory</span>
+            </div>
           </div>
 
           <h2 class="brand-headline">
@@ -79,7 +83,8 @@ async function handleLogin() {
       <div class="login-card-wrap">
         <div class="login-card">
           <div class="login-card__header">
-            <img class="login-card__logo" :src="brandLogoUrl" alt="" width="72" height="72" draggable="false" />
+            <img class="login-card__logo" :src="brandLogoUrl" :alt="t('智梦工厂')" width="72" height="72" draggable="false" />
+            <p class="login-card__brand">{{ t('智梦工厂') }}</p>
             <h2 class="login-card__title">{{ t('登录') }}</h2>
             <p class="login-card__sub">{{ t('请输入您的账号和密码继续') }}</p>
           </div>
@@ -150,7 +155,32 @@ async function handleLogin() {
 .brand-lockup {
   display: flex;
   align-items: center;
+  gap: var(--space-md);
   justify-content: flex-start;
+}
+
+.brand-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.brand-name__zh {
+  font-family: var(--font-sans);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--on-dark);
+  line-height: 1.2;
+}
+
+.brand-name__en {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1.3;
 }
 
 .brand-mark {
@@ -246,8 +276,17 @@ async function handleLogin() {
   background: transparent;
   border: 0;
   display: block;
-  margin: 0 auto var(--space-md);
+  margin: 0 auto var(--space-sm);
   filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.2));
+}
+
+.login-card__brand {
+  margin: 0 0 var(--space-md);
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--on-dark);
 }
 
 .login-card__title {

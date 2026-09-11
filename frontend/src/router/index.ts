@@ -120,7 +120,7 @@ const router = createRouter({
 
 function updateDocumentTitle(to = router.currentRoute.value) {
   const titleKey = to.meta?.titleKey as string | undefined
-  document.title = titleKey ? `${t(titleKey)} — Xunboo` : 'Xunboo'
+  document.title = titleKey ? `${t(titleKey)} — 智梦工厂` : '智梦工厂 Intelligent Dream Factory'
 }
 
 router.afterEach((to) => {
