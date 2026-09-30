@@ -1963,6 +1963,13 @@ class AssetController extends BaseController
             $headers[] = 'Authorization: Bearer ' . $apiKey;
         }
 
+        $requestModelId = trim((string) ($payload['model'] ?? $modelId));
+        $isNewApiImageModel = ImageGenerationOptions::isNewApiImageModel($requestModelId);
+        $referenceImageUrls = [];
+        $referenceImagePaths = [];
+        $tempFiles = [];
+        $useMultipart = false;
+
         // main_image_urls（多图合并参考）优先于单图 main_image_url（历史单参考图调用方，如资产核心图生成）。
         $mainImageUrls = is_array($context['main_image_urls'] ?? null) ? $context['main_image_urls'] : [];
         if ($mainImageUrls === []) {
@@ -1987,16 +1994,35 @@ class AssetController extends BaseController
                 }
             }
             if ($referenceImageUrls !== []) {
-                $payload['image_urls'] = $referenceImageUrls;
+                if ($isNewApiImageModel && trim((string) ($context['provider_task_id'] ?? '')) === '') {
+                    foreach ($referenceImageUrls as $referenceImageUrl) {
+                        $referenceImagePath = $this->downloadRemoteImageToTemp($referenceImageUrl, $tempFiles);
+                        if ($referenceImagePath === '') {
+                            $this->cleanupTempFiles($tempFiles);
+                            abort(422, 'NewAPI 参考图下载失败，请确认图片地址可公网访问且返回 image/* 内容');
+                        }
+                        $referenceImagePaths[] = $referenceImagePath;
+                    }
+                    $useMultipart = $referenceImagePaths !== [];
+                } else {
+                    $payload['image_urls'] = $referenceImageUrls;
+                }
             }
         }
 
-        $endpoint = $this->resolveImageEndpoint($endpoint);
-        $headers[] = 'Content-Type: application/json';
+        $endpoint = $this->resolveImageEndpoint($endpoint, $useMultipart);
+        if (!$useMultipart) {
+            $headers[] = 'Content-Type: application/json';
+        }
         $resumeTaskId = trim((string) ($context['provider_task_id'] ?? ''));
         $requestLogPayload = $resumeTaskId !== ''
             ? ['provider_task_id' => $resumeTaskId, 'resume' => true]
             : $payload;
+        if ($useMultipart) {
+            unset($requestLogPayload['image_urls']);
+            $requestLogPayload['multipart'] = true;
+            $requestLogPayload['image_count'] = count($referenceImagePaths);
+        }
 
         if ($resumeTaskId !== '') {
             $response = (string) json_encode([
@@ -2006,7 +2032,19 @@ class AssetController extends BaseController
             ], JSON_UNESCAPED_UNICODE);
             $httpStatus = 200;
         } else {
-            $postFields = json_encode($payload, JSON_UNESCAPED_UNICODE);
+            if ($useMultipart) {
+                $postFields = $payload;
+                foreach ($referenceImagePaths as $index => $referenceImagePath) {
+                    $field = count($referenceImagePaths) === 1 ? 'image' : 'image[' . $index . ']';
+                    $postFields[$field] = new \CURLFile(
+                        $referenceImagePath,
+                        $this->guessMimeType($referenceImagePath),
+                        basename($referenceImagePath),
+                    );
+                }
+            } else {
+                $postFields = json_encode($payload, JSON_UNESCAPED_UNICODE);
+            }
             $ch = curl_init($endpoint);
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
@@ -2022,6 +2060,7 @@ class AssetController extends BaseController
             $curlError = curl_error($ch);
             curl_close($ch);
         }
+        $this->cleanupTempFiles($tempFiles);
 
         $errorMessage = '';
         $imageUrl = '';
@@ -2296,10 +2335,20 @@ class AssetController extends BaseController
     }
 
     /**
-     * ToAPIs gpt-image-2 统一走 /images/generations；参考图通过 image_urls JSON 字段传入。
+     * 图片生成默认走 /images/generations；NewAPI 参考图编辑走 /images/edits。
      */
-    private function resolveImageEndpoint(string $endpoint): string
+    private function resolveImageEndpoint(string $endpoint, bool $useEdits = false): string
     {
+        if ($useEdits) {
+            if (str_contains($endpoint, '/images/edits')) {
+                return $endpoint;
+            }
+            if (str_contains($endpoint, '/images/generations')) {
+                return str_replace('/images/generations', '/images/edits', $endpoint);
+            }
+
+            return rtrim($endpoint, '/') . '/images/edits';
+        }
         if (str_contains($endpoint, '/images/edits')) {
             return str_replace('/images/edits', '/images/generations', $endpoint);
         }
@@ -2555,6 +2604,20 @@ class AssetController extends BaseController
             'gif' => 'image/gif',
             default => 'image/png',
         };
+    }
+
+    /**
+     * 删除本次请求下载的临时参考图，保留调用方提供的本地文件。
+     *
+     * @param array<int, string> $tempFiles
+     */
+    private function cleanupTempFiles(array $tempFiles): void
+    {
+        foreach ($tempFiles as $tempFile) {
+            if ($tempFile !== '' && is_file($tempFile)) {
+                @unlink($tempFile);
+            }
+        }
     }
 
     private function persistGeneratedImageUrl(string $url, array $context = []): string
