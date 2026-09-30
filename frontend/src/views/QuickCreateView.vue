@@ -195,7 +195,7 @@ function togglePromptExpand(messageId: number) {
 const aspectRatio = ref('adaptive')
 const videoResolution = ref('480p')
 const imageResolution = ref('1K')
-const imageQuality = ref<'low' | 'medium' | 'high'>('medium')
+const imageQuality = ref<'low' | 'medium' | 'high' | 'standard'>('medium')
 const duration = ref(5)
 const count = ref(1)
 const generateAudio = ref(false)
@@ -249,9 +249,19 @@ const isTencentVodImage = computed(() => {
   const provider = String(model.options?.provider ?? '').toLowerCase()
   return provider === 'tencent_vod' || provider === 'tencent' || provider === 'vod_aigc' || model.endpoint.includes('vod.tencentcloudapi.com')
 })
-const supportsImageAspectRatio = computed(() => mode.value !== 'image' || !isTencentVodImage.value)
-const supportsImageResolution = computed(() => mode.value !== 'image' || !isTencentVodImage.value)
+const isFixedOpenAiImage = computed(() => {
+  const model = selectedImageModel.value
+  if (!model) return false
+  const modelId = String(model.model_id ?? '').toLowerCase()
+  const provider = String(model.options?.provider ?? '').toLowerCase()
+  return provider === 'openai_compatible' && (modelId === 'gpt-image-2.5-flare' || modelId === 'gpt-image-2.5-sunburst')
+})
+const supportsImageAspectRatio = computed(() => mode.value !== 'image' || (!isTencentVodImage.value && !isFixedOpenAiImage.value))
+const supportsImageResolution = computed(() => mode.value !== 'image' || (!isTencentVodImage.value && !isFixedOpenAiImage.value))
 const supportsImageQuality = computed(() => mode.value === 'image')
+const visibleImageQualityOptions = computed(() => isFixedOpenAiImage.value
+  ? [{ value: 'standard', label: '标准' }]
+  : imageQualityOptions)
 const videoResolutionOptions = computed(() => resolveVideoResolutionOptions(selectedVideoModel.value))
 const videoAspectRatioChoices = computed(() => [
   { value: 'adaptive', label: '智能比例' },
@@ -268,6 +278,17 @@ watch(isTencentVodImage, (enabled) => {
   if (!enabled || mode.value !== 'image') return
   aspectRatio.value = 'adaptive'
   imageResolution.value = '1K'
+})
+
+watch([isFixedOpenAiImage, mode], ([enabled, currentMode]) => {
+  if (currentMode !== 'image') return
+  if (enabled) {
+    aspectRatio.value = 'adaptive'
+    imageResolution.value = '1K'
+    imageQuality.value = 'standard'
+  } else if (imageQuality.value === 'standard') {
+    imageQuality.value = 'medium'
+  }
 })
 
 watch(selectedVideoModel, (model) => {
@@ -1698,7 +1719,7 @@ function refillQuickCreateInput(message: QuickCreateMessage) {
   } else {
     imageResolution.value = options.resolution || '1K'
     const quality = String(options.quality || 'medium').toLowerCase()
-    imageQuality.value = quality === 'low' || quality === 'medium' || quality === 'high' ? quality : 'medium'
+    imageQuality.value = quality === 'low' || quality === 'medium' || quality === 'high' || quality === 'standard' ? quality : 'medium'
     if (message.model_config_id > 0) selectedImageModelId.value = message.model_config_id
   }
 
@@ -2548,7 +2569,7 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
         </el-select>
 
         <el-select v-if="supportsImageQuality" v-model="imageQuality" size="small" class="qc-param qc-param-narrow">
-          <el-option v-for="opt in imageQualityOptions" :key="opt.value" :value="opt.value" :label="t(opt.label)" />
+          <el-option v-for="opt in visibleImageQualityOptions" :key="opt.value" :value="opt.value" :label="t(opt.label)" />
         </el-select>
 
         <el-select v-if="mode === 'video'" v-model="duration" size="small" class="qc-param qc-param-narrow">

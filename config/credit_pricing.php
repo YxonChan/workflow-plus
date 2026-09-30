@@ -7,25 +7,25 @@ declare(strict_types=1);
  *
  * 规则：
  * - 1 积分 = ¥0.01
- * - 平台价 = 供应商成本 × 1.25（原价上浮 25%）
+ * - 平台价 = 供应商成本 × 1.25（后台 markup，可调整）
  * - USD 按 7.2 CNY/USD
  *
  * 来源：
  * - DeepSeek V4 Flash peak：api-docs.deepseek.com（cache miss $0.44/M，output $1.32/M）
- * - Tencent OG/image2：官方 1K 价格 ×1.25；参考图输入 ¥0.10/张 ×1.25
+ * - GPT Image 2.5：供应商单图 ¥0.20 × 2 倍业务上浮 ×后台 markup
  * - Seedance 标准版：ToAPIs seedance-2.0「输入不含视频」价目表（16:9 5 秒）×1.25
  */
 return [
     'enabled' => true,
-    'pricing_version' => '2026-09-01.1',
-    'updated_at' => '2026-09-01',
+    'pricing_version' => '2026-09-30.1',
+    'updated_at' => '2026-09-30',
     'credit_unit_cny' => 0.01,
     'usd_cny' => 7.2,
     'markup' => 1.25,
     'notes' => [
         '平台价 = 供应商成本上浮 25%（×1.25）；1 积分 = ¥0.01。',
         '视频按 Seedance 标准版「输入不含视频」价目：480P ¥0.462、720P ¥0.994、1080P ¥2.478 / 秒 ×1.25 → 57.75 / 124.25 / 309.75 积分/秒。当前按输出秒数预估，不以实际 token 事后调账。',
-        '当前不报价 4K；若请求 4K 将直接拒绝。图片按腾讯 OG/image2 官方 1K 价格计费，参考图输入 12.5 积分/张。失败不扣费；全员计费（含管理员）。',
+        '当前图片模型固定 1024x1024、standard、vivid、URL 返回。单图供应商价 ¥0.20，平台先上浮一倍，再乘后台 markup；失败不扣费；全员计费（含管理员）。',
     ],
     'text' => [
         'default_model_id' => 'deepseek-v4-flash',
@@ -50,11 +50,35 @@ return [
         ],
     ],
     'image' => [
-        'default_model_id' => 'OG/image2',
+        'default_model_id' => 'gpt-image-2.5-flare',
         'models' => [
-            // 当前唯一在用图片模型；历史日志别名由 CreditService::normalizeImageModelId 归一到此。
+            'gpt-image-2.5-flare' => [
+                'label' => 'GPT Image 2.5 Flare',
+                'unit' => 'per_image',
+                'base_price_cny' => 0.20,
+                'price_multiplier' => 2.0,
+                'by_quality' => [
+                    'standard' => 50.0,
+                ],
+                'reference_image_credits' => 0.0,
+                'default_quality' => 'standard',
+                'basis' => '¥0.20/image ×2 × backend markup',
+            ],
+            'gpt-image-2.5-sunburst' => [
+                'label' => 'GPT Image 2.5 Sunburst',
+                'unit' => 'per_image',
+                'base_price_cny' => 0.20,
+                'price_multiplier' => 2.0,
+                'by_quality' => [
+                    'standard' => 50.0,
+                ],
+                'reference_image_credits' => 0.0,
+                'default_quality' => 'standard',
+                'basis' => '¥0.20/image ×2 × backend markup',
+            ],
+            // 保留历史日志的计费规则；新请求不会再选用腾讯模型。
             'OG/image2' => [
-                'label' => 'Tencent OG image2',
+                'label' => 'Legacy Tencent OG image2',
                 'unit' => 'per_image',
                 'by_quality' => [
                     'low' => 5.63,
@@ -63,20 +87,18 @@ return [
                 ],
                 'reference_image_credits' => 12.5,
                 'default_quality' => 'medium',
-                'basis' => 'Tencent official OG/image2 1K rates ×1.25; input image ¥0.10/张 ×1.25',
+                'basis' => 'legacy Tencent OG/image2 rate',
             ],
         ],
         'fallback' => [
             'label' => '默认图片模型',
             'unit' => 'per_image',
             'by_quality' => [
-                'low' => 5.63,
-                'medium' => 49.75,
-                'high' => 197.88,
+                'standard' => 50.0,
             ],
-            'reference_image_credits' => 12.5,
-            'default_quality' => 'medium',
-            'basis' => 'fallback to OG/image2 transitional rates ×1.25',
+            'reference_image_credits' => 0.0,
+            'default_quality' => 'standard',
+            'basis' => 'fallback to GPT Image 2.5 rates',
         ],
     ],
     'video' => [

@@ -15,7 +15,7 @@ class AuthService
     private const DEFAULT_PASSWORD = 'Aa123456';
 
     /** 提升此版本号可在发版后强制各进程重新跑一次 schema 迁移。 */
-    private const SCHEMA_VERSION = 6;
+    private const SCHEMA_VERSION = 7;
 
     private static bool $schemaReady = false;
 
@@ -633,136 +633,153 @@ SQL);
         $now = date('Y-m-d H:i:s');
         $changed = false;
 
-        // 清理历史 toapis gpt-image-2，统一改用腾讯云点播 OG/image2。
-        $deleted = Db::name('model_configs')
+        $newApiKey = trim((string) env('NEWAPI_IMAGE_API_KEY', env('IMAGE_API_KEY', '')));
+        $rows = Db::name('model_configs')
             ->where('type', 'image')
-            ->where(function ($query): void {
-                $query->whereLike('endpoint', '%toapis.com%')
-                    ->whereOr('endpoint', 'like', '%toapis.xyz%')
-                    ->whereOr('model_id', 'gpt-image-2')
-                    ->whereOr('model_id', 'gpt-image-2-official');
-            })
-            ->delete();
-        if ((int) $deleted > 0) {
-            $changed = true;
+            ->order(['scope' => 'asc', 'user_id' => 'asc', 'is_default' => 'desc', 'sort' => 'asc', 'id' => 'asc'])
+            ->select()
+            ->toArray();
+
+        $globalRows = array_values(array_filter(
+            $rows,
+            static fn (array $row): bool => strtolower(trim((string) ($row['scope'] ?? 'global'))) === 'global'
+                && (int) ($row['user_id'] ?? 0) === 0,
+        ));
+        $primary = null;
+        $secondary = null;
+        foreach ($globalRows as $row) {
+            $modelId = strtolower(trim((string) ($row['model_id'] ?? '')));
+            $endpoint = strtolower(trim((string) ($row['endpoint'] ?? '')));
+            if ($modelId === 'gpt-image-2.5-flare') {
+                $primary ??= $row;
+            } elseif ($modelId === 'gpt-image-2.5-sunburst') {
+                $secondary ??= $row;
+            } elseif ($primary === null && ((int) ($row['is_default'] ?? 0) === 1 || str_contains($endpoint, 'tencentcloudapi.com'))) {
+                // Reuse the existing default row so historical references remain valid.
+                $primary = $row;
+            }
         }
 
-        $existing = Db::name('model_configs')
-            ->where('type', 'image')
-            ->where('scope', 'global')
-            ->where('user_id', 0)
-            ->where(function ($query): void {
-                $query->where('endpoint', ImageGenerationOptions::DEFAULT_ENDPOINT)
-                    ->whereOr('model_id', ImageGenerationOptions::DEFAULT_MODEL_ID);
-            })
-            ->order(['is_default' => 'desc', 'id' => 'asc'])
-            ->find();
+        $syncModel = static function (array $row, string $modelId, bool $isDefault) use ($newApiKey, $now, &$changed): array {
+            $currentOptions = json_decode((string) ($row['options'] ?? ''), true);
+            if (!is_array($currentOptions)) {
+                $currentOptions = [];
+            }
+            $options = array_merge(ImageGenerationOptions::defaultModelOptions($modelId), $currentOptions);
+            $options['provider'] = ImageGenerationOptions::DEFAULT_PROVIDER;
+            $options['model_name'] = $modelId;
+            $options['quality'] = 'standard';
+            $options['size'] = '1024x1024';
+            $options['style'] = 'vivid';
+            $options['response_format'] = 'url';
+            $optionsJson = json_encode($options, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $oldEndpoint = strtolower(trim((string) ($row['endpoint'] ?? '')));
+            $oldModelId = strtolower(trim((string) ($row['model_id'] ?? '')));
+            $oldKey = trim((string) ($row['api_key'] ?? ''));
+            $apiKey = $newApiKey !== '' ? $newApiKey : (str_contains($oldEndpoint, 'my110.vip') && in_array($oldModelId, ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'], true) ? $oldKey : '');
 
-        if (!is_array($existing) || (int) ($existing['id'] ?? 0) <= 0) {
-            $candidates = Db::name('model_configs')
+            $update = [
+                'name' => $modelId === 'gpt-image-2.5-sunburst' ? 'GPT Image 2.5 Sunburst' : ImageGenerationOptions::DEFAULT_MODEL_NAME,
+                'model_id' => $modelId,
+                'endpoint' => ImageGenerationOptions::DEFAULT_ENDPOINT,
+                'api_key' => $apiKey,
+                'options' => $optionsJson,
+                'is_default' => $isDefault ? 1 : 0,
+                'enabled' => 1,
+                'update_time' => $now,
+            ];
+
+            if ((int) ($row['id'] ?? 0) > 0) {
+                $rowChanged = false;
+                $oldOptions = json_decode((string) ($row['options'] ?? ''), true);
+                if (!is_array($oldOptions)) {
+                    $oldOptions = [];
+                }
+                foreach (['name', 'model_id', 'endpoint', 'api_key', 'is_default', 'enabled'] as $key) {
+                    if ((string) ($row[$key] ?? '') !== (string) ($update[$key] ?? '')) {
+                        $rowChanged = true;
+                        break;
+                    }
+                }
+                if ($oldOptions != $options) {
+                    $rowChanged = true;
+                }
+                if ($rowChanged) {
+                    $changed = true;
+                    Db::name('model_configs')->where('id', (int) $row['id'])->update($update);
+                }
+            }
+
+            return $update;
+        };
+
+        if (!is_array($primary) || (int) ($primary['id'] ?? 0) <= 0) {
+            Db::name('model_configs')
                 ->where('type', 'image')
                 ->where('scope', 'global')
                 ->where('user_id', 0)
-                ->where('enabled', 1)
-                ->order(['is_default' => 'desc', 'id' => 'asc'])
-                ->select()
-                ->toArray();
-            foreach ($candidates as $candidate) {
-                $opts = json_decode((string) ($candidate['options'] ?? ''), true);
-                $provider = is_array($opts) ? strtolower(trim((string) ($opts['provider'] ?? ''))) : '';
-                if ($provider === ImageGenerationOptions::DEFAULT_PROVIDER) {
-                    $existing = $candidate;
-                    break;
-                }
-            }
-        }
-
-        if (!is_array($existing) || (int) ($existing['id'] ?? 0) <= 0) {
-            Db::name('model_configs')
-                ->where('type', 'image')
                 ->where('is_default', 1)
                 ->update(['is_default' => 0, 'update_time' => $now]);
-
-            Db::name('model_configs')->insert([
+            $primaryId = (int) Db::name('model_configs')->insertGetId(array_merge([
                 'user_id' => 0,
                 'scope' => 'global',
                 'type' => 'image',
-                'name' => ImageGenerationOptions::DEFAULT_MODEL_NAME,
-                'model_id' => ImageGenerationOptions::DEFAULT_MODEL_ID,
-                'endpoint' => ImageGenerationOptions::DEFAULT_ENDPOINT,
-                'api_key' => '',
-                'options' => json_encode(
-                    ImageGenerationOptions::defaultModelOptions(ImageGenerationOptions::DEFAULT_MODEL_ID),
-                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
-                ),
-                'is_default' => 1,
-                'enabled' => 1,
                 'sort' => 0,
                 'create_time' => $now,
-                'update_time' => $now,
-            ]);
-            RedisCache::bumpVersion('model_configs');
-            return;
-        }
-
-        $id = (int) $existing['id'];
-        Db::name('model_configs')
-            ->where('type', 'image')
-            ->where('is_default', 1)
-            ->where('id', '<>', $id)
-            ->update(['is_default' => 0, 'update_time' => $now]);
-
-        $update = [];
-        if ((int) ($existing['enabled'] ?? 0) !== 1) {
-            $update['enabled'] = 1;
-        }
-        if ((int) ($existing['is_default'] ?? 0) !== 1) {
-            $update['is_default'] = 1;
-        }
-        if (trim((string) ($existing['name'] ?? '')) === '') {
-            $update['name'] = ImageGenerationOptions::DEFAULT_MODEL_NAME;
-        }
-        if (trim((string) ($existing['model_id'] ?? '')) === '') {
-            $update['model_id'] = ImageGenerationOptions::DEFAULT_MODEL_ID;
-        }
-        if (trim((string) ($existing['endpoint'] ?? '')) === '') {
-            $update['endpoint'] = ImageGenerationOptions::DEFAULT_ENDPOINT;
-        }
-
-        // 不覆盖密钥与已有业务字段；仅补齐缺失的腾讯默认 options 键。
-        $currentOptions = json_decode((string) ($existing['options'] ?? ''), true);
-        if (!is_array($currentOptions)) {
-            $currentOptions = [];
-        }
-        $defaults = ImageGenerationOptions::defaultModelOptions(ImageGenerationOptions::DEFAULT_MODEL_ID);
-        $mergedOptions = $currentOptions;
-        $optionsChanged = false;
-        foreach ($defaults as $key => $value) {
-            if (!array_key_exists($key, $mergedOptions) || $mergedOptions[$key] === '' || $mergedOptions[$key] === null) {
-                $mergedOptions[$key] = $value;
-                $optionsChanged = true;
-            }
-        }
-        // 轮询窗口过短会导致参考图假超时；低于默认时抬升到默认。
-        $pollAttempts = (int) ($mergedOptions['poll_attempts'] ?? 0);
-        $defaultPollAttempts = (int) ($defaults['poll_attempts'] ?? 120);
-        if ($pollAttempts > 0 && $pollAttempts < $defaultPollAttempts) {
-            $mergedOptions['poll_attempts'] = $defaultPollAttempts;
-            $optionsChanged = true;
-        }
-        $pollInterval = (int) ($mergedOptions['poll_interval'] ?? 0);
-        if ($pollInterval <= 0) {
-            $mergedOptions['poll_interval'] = (int) ($defaults['poll_interval'] ?? 3);
-            $optionsChanged = true;
-        }
-        if ($optionsChanged) {
-            $update['options'] = json_encode($mergedOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        }
-
-        if ($update !== []) {
-            $update['update_time'] = $now;
-            Db::name('model_configs')->where('id', $id)->update($update);
+            ], $syncModel([], 'gpt-image-2.5-flare', true)));
+            $primary = ['id' => $primaryId];
             $changed = true;
+        } else {
+            $primaryId = (int) $primary['id'];
+            $syncModel($primary, 'gpt-image-2.5-flare', true);
+        }
+
+        if (!is_array($secondary) || (int) ($secondary['id'] ?? 0) <= 0) {
+            Db::name('model_configs')->insert(array_merge([
+                'user_id' => 0,
+                'scope' => 'global',
+                'type' => 'image',
+                'sort' => 1,
+                'create_time' => $now,
+            ], $syncModel([], 'gpt-image-2.5-sunburst', false)));
+            $changed = true;
+        } else {
+            $syncModel($secondary, 'gpt-image-2.5-sunburst', false);
+        }
+
+        $siblingDefaults = Db::name('model_configs')
+            ->where('type', 'image')
+            ->where('scope', 'global')
+            ->where('user_id', 0)
+            ->where('id', '<>', $primaryId)
+            ->where('is_default', 1)
+            ->column('id');
+        if ($siblingDefaults !== []) {
+            Db::name('model_configs')
+                ->whereIn('id', $siblingDefaults)
+                ->update(['is_default' => 0, 'update_time' => $now]);
+            $changed = true;
+        }
+
+        foreach ($rows as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id <= 0 || $id === $primaryId || ($secondary !== null && $id === (int) ($secondary['id'] ?? 0))) {
+                continue;
+            }
+            $endpoint = strtolower(trim((string) ($row['endpoint'] ?? '')));
+            $modelId = strtolower(trim((string) ($row['model_id'] ?? '')));
+            $isLegacyImage = str_contains($endpoint, 'tencentcloudapi.com')
+                || str_contains($endpoint, 'toapis.com')
+                || str_contains($endpoint, 'toapis.xyz')
+                || in_array($modelId, ['og', 'og/image2', 'gpt-image-2', 'gpt-image-2-official'], true);
+            if ($isLegacyImage && ((int) ($row['enabled'] ?? 0) !== 0 || (int) ($row['is_default'] ?? 0) !== 0)) {
+                Db::name('model_configs')->where('id', $id)->update([
+                    'enabled' => 0,
+                    'is_default' => 0,
+                    'update_time' => $now,
+                ]);
+                $changed = true;
+            }
         }
 
         if ($changed) {

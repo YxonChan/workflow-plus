@@ -6,24 +6,24 @@ namespace app\support;
 
 /**
  * 统一图片生成规格。
- * 默认通道：腾讯云点播 AIGC OG/image2（异步任务）。
+ * 默认通道：兼容 OpenAI Images API 的 NewAPI 图片模型。
  * 从 model_configs.options 读取，未配置时使用下列默认值。
  */
 final class ImageGenerationOptions
 {
-    public const DEFAULT_ENDPOINT = 'https://vod.tencentcloudapi.com';
+    public const DEFAULT_ENDPOINT = 'https://my110.vip/v1';
 
-    public const DEFAULT_MODEL_ID = 'OG/image2';
+    public const DEFAULT_MODEL_ID = 'gpt-image-2.5-flare';
 
-    public const DEFAULT_PROVIDER = 'tencent_vod';
+    public const DEFAULT_PROVIDER = 'openai_compatible';
 
     /** @var array<int, string> */
     public const PREFERRED_MODEL_IDS = [
-        'OG/image2',
-        'OG',
+        'gpt-image-2.5-flare',
+        'gpt-image-2.5-sunburst',
     ];
 
-    public const DEFAULT_MODEL_NAME = 'Tencent OG image2';
+    public const DEFAULT_MODEL_NAME = 'GPT Image 2.5 Flare';
 
     /** ToAPIs 使用比例尺寸，不使用旧的像素尺寸。 */
     public const SIZE_LANDSCAPE_16_9 = '16:9';
@@ -37,11 +37,13 @@ final class ImageGenerationOptions
 
     public const DEFAULT_N = 1;
 
-    /**
-     * 默认中清 medium（腾讯云对应 image2_medium），分辨率固定 1K。
-     */
+    /** 默认图片质量；旧腾讯模型仍使用 medium，新模型使用 standard。 */
     public static function defaultQuality(string $modelId = ''): string
     {
+        if (self::isNewApiImageModel($modelId)) {
+            return 'standard';
+        }
+
         return 'medium';
     }
 
@@ -70,7 +72,7 @@ final class ImageGenerationOptions
     /**
      * 合并模型 options，得到发往上游的 size / quality / n 及可选 aspect_ratio、resolution。
      *
-     * @return array{size: string, quality: string, n: int, aspect_ratio?: string, resolution?: string}
+     * @return array{size: string, quality: string, n: int, aspect_ratio?: string, resolution?: string, style?: string, response_format?: string}
      */
     public static function resolve(array $options, string $modelId = ''): array
     {
@@ -80,9 +82,12 @@ final class ImageGenerationOptions
 
         $size = self::normalizeSize((string) ($options['size'] ?? ''), $modelId);
         $quality = self::normalizeQuality((string) ($options['quality'] ?? ''), $modelId);
-        $n = max(1, (int) ($options['n'] ?? self::DEFAULT_N));
+        $n = max(1, min(10, (int) ($options['n'] ?? self::DEFAULT_N)));
 
-        if (self::isStrictToapisGptImageModel($modelId)) {
+        if (self::isNewApiImageModel($modelId)) {
+            $size = '1024x1024';
+            $quality = 'standard';
+        } elseif (self::isStrictToapisGptImageModel($modelId)) {
             $size = self::normalizeStrictToapisSize($size);
             // ToAPIs channel 107（gpt-image-2）目前仅接受 quality="medium"，其余取值会被上游拒绝：
             // ValidateRequestAndSetAction for channel 107: gpt-image-2 only supports quality="medium"
@@ -103,6 +108,11 @@ final class ImageGenerationOptions
 
         $out['resolution'] = self::normalizeResolution((string) ($options['resolution'] ?? ''), $modelId);
 
+        if (self::isNewApiImageModel($modelId)) {
+            $out['style'] = self::normalizeStyle((string) ($options['style'] ?? ''));
+            $out['response_format'] = self::normalizeResponseFormat((string) ($options['response_format'] ?? ''));
+        }
+
         return $out;
     }
 
@@ -115,11 +125,12 @@ final class ImageGenerationOptions
     {
         $options = [
             'provider' => self::DEFAULT_PROVIDER,
-            'model_name' => 'OG',
-            'model_version' => self::defaultModelVersion(self::defaultQuality($modelId)),
+            'model_name' => $modelId !== '' ? $modelId : self::DEFAULT_MODEL_ID,
             'quality' => self::defaultQuality($modelId),
             'n' => self::DEFAULT_N,
-            'size' => self::defaultSize($modelId),
+            'size' => self::isNewApiImageModel($modelId) ? '1024x1024' : self::defaultSize($modelId),
+            'style' => 'vivid',
+            'response_format' => 'url',
             'aspect_ratio' => self::DEFAULT_ASPECT_RATIO,
             'resolution' => self::DEFAULT_RESOLUTION,
             'storage_mode' => 'Temporary',
@@ -141,13 +152,18 @@ final class ImageGenerationOptions
         $payload['quality'] = $resolved['quality'];
         $payload['n'] = $resolved['n'];
 
-        foreach (['aspect_ratio', 'resolution'] as $key) {
-            if (!empty($options[$key]) || !empty($resolved[$key])) {
-                $payload[$key] = $resolved[$key];
+        if (self::isNewApiImageModel($modelId)) {
+            $payload['style'] = $resolved['style'];
+            $payload['response_format'] = $resolved['response_format'];
+            unset($payload['aspect_ratio'], $payload['resolution']);
+        } else {
+            foreach (['aspect_ratio', 'resolution'] as $key) {
+                if (!empty($options[$key]) || !empty($resolved[$key])) {
+                    $payload[$key] = $resolved[$key];
+                }
             }
+            unset($payload['aspect_ratio']);
         }
-
-        unset($payload['aspect_ratio']);
 
         return $payload;
     }
@@ -221,6 +237,20 @@ final class ImageGenerationOptions
         return $quality;
     }
 
+    private static function normalizeStyle(string $style): string
+    {
+        $style = strtolower(trim($style));
+
+        return in_array($style, ['vivid', 'natural'], true) ? $style : 'vivid';
+    }
+
+    private static function normalizeResponseFormat(string $format): string
+    {
+        $format = strtolower(trim($format));
+
+        return in_array($format, ['url', 'b64_json'], true) ? $format : 'url';
+    }
+
     /**
      * 图片生成统一固定为 1K，避免旧配置或手工配置回退到高分辨率导致任务失败或资产图加载过慢。
      */
@@ -253,6 +283,14 @@ final class ImageGenerationOptions
     {
         $modelId = strtolower(trim($modelId));
         return $modelId === 'gpt-image-2' || $modelId === 'gpt-image-2-official';
+    }
+
+    public static function isNewApiImageModel(string $modelId): bool
+    {
+        return in_array(strtolower(trim($modelId)), [
+            'gpt-image-2.5-flare',
+            'gpt-image-2.5-sunburst',
+        ], true);
     }
 
     private static function normalizeStrictToapisSize(string $size): string

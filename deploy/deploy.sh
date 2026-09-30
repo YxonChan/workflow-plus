@@ -314,11 +314,11 @@ apply_sql_and_defaults() {
     return 0
   fi
 
-  if [[ -f "$LIVE_DIR/scripts/apply_tencent_image_defaults.php" ]]; then
-    log "同步腾讯生图默认 options"
+  if [[ -f "$LIVE_DIR/scripts/apply_newapi_image_defaults.php" ]]; then
+    log "同步 NewAPI 图片模型默认配置"
     (
       cd "$LIVE_DIR"
-      "$PHP_BIN" scripts/apply_tencent_image_defaults.php || log "WARN: apply_tencent_image_defaults 失败，继续"
+      "$PHP_BIN" scripts/apply_newapi_image_defaults.php || log "WARN: apply_newapi_image_defaults 失败，继续"
     )
   fi
 }

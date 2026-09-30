@@ -137,7 +137,16 @@ SQL);
         $rule = self::imageRule($modelId);
         $quality = self::normalizeQuality($quality !== '' ? $quality : (string) ($rule['default_quality'] ?? ImageGenerationOptions::defaultQuality()));
         $byQuality = is_array($rule['by_quality'] ?? null) ? $rule['by_quality'] : [];
-        $credits = (float) ($byQuality[$quality] ?? $byQuality['high'] ?? 197.88);
+        if (isset($rule['base_price_cny'])) {
+            $pricing = self::pricing();
+            $unitCny = max(0.0001, (float) ($pricing['credit_unit_cny'] ?? 0.01));
+            $markup = max(0, (float) ($pricing['markup'] ?? 1.0));
+            $basePrice = max(0, (float) $rule['base_price_cny']);
+            $priceMultiplier = max(0, (float) ($rule['price_multiplier'] ?? 1.0));
+            $credits = ($basePrice * $priceMultiplier * $markup) / $unitCny;
+        } else {
+            $credits = (float) ($byQuality[$quality] ?? $byQuality['high'] ?? 197.88);
+        }
 
         $referenceImageCount = max(0, min(9, $referenceImageCount));
         $referenceFee = $referenceImageCount * (float) ($rule['reference_image_credits'] ?? 12.5);
@@ -622,7 +631,7 @@ SQL);
     }
 
     /**
-     * 将腾讯云点播日志别名归一到物价表主键 OG/image2。
+     * 将历史腾讯云点播日志别名归一到旧的 OG/image2 规则；新模型保持原始 model id。
      */
     private static function normalizeImageModelId(string $modelId): string
     {
@@ -674,7 +683,7 @@ SQL);
     private static function normalizeQuality(string $quality): string
     {
         $quality = strtolower(trim($quality));
-        return in_array($quality, ['low', 'medium', 'high'], true) ? $quality : ImageGenerationOptions::defaultQuality();
+        return in_array($quality, ['low', 'medium', 'high', 'standard'], true) ? $quality : ImageGenerationOptions::defaultQuality();
     }
 
     private static function normalizeResolution(string $resolution): string

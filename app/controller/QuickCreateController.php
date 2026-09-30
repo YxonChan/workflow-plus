@@ -140,7 +140,7 @@ class QuickCreateController extends BaseController
     private const ASPECT_RATIOS = ['', 'adaptive', '16:9', '9:16', '1:1', '4:3', '3:4', '21:9'];
     private const VIDEO_RESOLUTIONS = ['', '480p', '720p', '1080p', '768P', '2K'];
     private const IMAGE_RESOLUTIONS = ['', '1K', '2K', '4K'];
-    private const IMAGE_QUALITIES = ['', 'low', 'medium', 'high'];
+    private const IMAGE_QUALITIES = ['', 'low', 'medium', 'high', 'standard'];
 
     /**
      * 历史消息列表。
@@ -726,16 +726,19 @@ class QuickCreateController extends BaseController
 
     /**
      * 用户选择的图片参数临时合并进模型 options（仅内存，不落库）。
-     * 腾讯云点播 OG/image2：比例/分辨率上游无效，仍隐藏；画质 quality 可映射 ModelVersion。
+     * 图片模型的用户参数只在对应上游支持时写入内存 options；NewAPI 图片模型由
+     * ImageGenerationOptions 固定为 1024x1024/standard/vivid/url。
      */
     private function applyImageOptionsToModel(ModelConfig $model, array $options): void
     {
         $imageOptions = [];
         $quality = strtolower(trim((string) ($options['quality'] ?? '')));
-        if (in_array($quality, ['low', 'medium', 'high'], true)) {
+        if (in_array($quality, ['low', 'medium', 'high', 'standard'], true)) {
             $imageOptions['quality'] = $quality;
-            // 避免模型默认 model_version=image2_high 盖住用户所选画质。
-            $imageOptions['model_version'] = \app\support\ImageGenerationOptions::defaultModelVersion($quality);
+            if ($quality !== 'standard') {
+                // 避免旧模型默认 model_version=image2_high 盖住用户所选画质。
+                $imageOptions['model_version'] = \app\support\ImageGenerationOptions::defaultModelVersion($quality);
+            }
         }
 
         if (!$this->isTencentVodImageModel($model)) {

@@ -1,5 +1,6 @@
 *.log
 .env
+/.env.server*
 composer.phar
 composer.lock
 .DS_Store
