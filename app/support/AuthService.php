@@ -15,7 +15,7 @@ class AuthService
     private const DEFAULT_PASSWORD = 'Aa123456';
 
     /** 提升此版本号可在发版后强制各进程重新跑一次 schema 迁移。 */
-    private const SCHEMA_VERSION = 7;
+    private const SCHEMA_VERSION = 8;
 
     private static bool $schemaReady = false;
 
