@@ -5,10 +5,9 @@ import { useI18n } from 'vue-i18n'
 import { graphToSteps } from '@/utils/workflowGraph'
 import {
   VISUAL_STYLE_SEGMENT_OPTIONS,
-  normalizeVisualStyleVariant,
-  visualStyleVariantOptions,
   type VisualStyle,
 } from '@/utils/visualStyle'
+import StylePresetSelect from '@/components/series/StylePresetSelect.vue'
 import { parseNovelFile } from '@/utils/novelImport'
 import type { WorkflowBundle } from '@/types'
 
@@ -29,7 +28,7 @@ const emit = defineEmits<{
     episodeCount: number | null
     promoSegmentCount: number | null
     visualStyle: VisualStyle
-    visualStyleVariant: string
+    stylePresetId: number | null
     region: 'china' | 'western'
   }): void
 }>()
@@ -40,7 +39,7 @@ const title = ref('')
 const episodeCount = ref<number | null>(null)
 const promoSegmentCount = ref(3)
 const visualStyle = ref<VisualStyle>('realistic')
-const visualStyleVariant = ref('')
+const stylePresetId = ref<number | null>(null)
 const region = ref<'china' | 'western'>('china')
 const novelImportInputRef = ref<HTMLInputElement | null>(null)
 const isNovelImporting = ref(false)
@@ -60,13 +59,6 @@ const systemBundles = computed(() => props.bundles.filter((b) => Number(b.is_sys
 const userBundles = computed(() => props.bundles.filter((b) => Number(b.is_system) !== 1))
 const visualStyleSegmentOptions = computed(() =>
   VISUAL_STYLE_SEGMENT_OPTIONS.map((option) => ({ ...option, label: t(option.label) })),
-)
-const currentVisualStyleVariantOptions = computed(() =>
-  visualStyleVariantOptions(visualStyle.value).map((option) => ({
-    ...option,
-    label: t(option.label),
-    desc: option.desc ? t(option.desc) : option.desc,
-  })),
 )
 const regionOptions = computed(() => [
   { label: t('国内'), value: 'china' },
@@ -99,7 +91,7 @@ function reset() {
   episodeCount.value = null
   promoSegmentCount.value = 3
   visualStyle.value = 'realistic'
-  visualStyleVariant.value = ''
+  stylePresetId.value = null
   region.value = 'china'
   isNovelImporting.value = false
   isNovelDragOver.value = false
@@ -114,10 +106,6 @@ watch(() => props.preselectId, (id) => {
 onMounted(() => {
   if (props.visible) reset()
 })
-watch(visualStyle, (style) => {
-  visualStyleVariant.value = normalizeVisualStyleVariant(style, visualStyleVariant.value)
-})
-
 function close() { emit('update:visible', false) }
 
 function submit() {
@@ -131,7 +119,7 @@ function submit() {
     episodeCount: episodeCount.value,
     promoSegmentCount: isPromoWorkflow.value ? promoSegmentCount.value : null,
     visualStyle: visualStyle.value,
-    visualStyleVariant: normalizeVisualStyleVariant(visualStyle.value, visualStyleVariant.value),
+    stylePresetId: stylePresetId.value,
     region: region.value,
   })
 }
@@ -378,25 +366,8 @@ async function importNovelToInput(file: File) {
             />
           </div>
           <div class="setting-field setting-field--full">
-            <span class="setting-field__label">{{ t('细分风格') }}</span>
-            <el-select
-              v-model="visualStyleVariant"
-              clearable
-              filterable
-              :placeholder="t('跟随一级风格')"
-            >
-              <el-option
-                v-for="option in currentVisualStyleVariantOptions"
-                :key="option.value"
-                :label="option.label"
-                :value="option.value"
-              >
-                <div class="style-variant-option">
-                  <span>{{ option.label }}</span>
-                  <em v-if="option.desc">{{ option.desc }}</em>
-                </div>
-              </el-option>
-            </el-select>
+            <span class="setting-field__label">{{ t('作品风格') }}</span>
+            <StylePresetSelect v-model="stylePresetId" :visual-style="visualStyle" />
           </div>
         </div>
       </section>

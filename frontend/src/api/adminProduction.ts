@@ -22,6 +22,8 @@ export interface AdminSeriesRow {
   description: string
   visual_style: string
   visual_style_variant?: string
+  style_preset_id?: number | null
+  style_preset_name?: string
   region: string
   series_workflow_id?: number | null
   episode_count: number

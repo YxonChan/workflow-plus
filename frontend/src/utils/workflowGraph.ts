@@ -41,7 +41,6 @@ export function createDefaultParams(kind: NodeKind, scope: WorkflowScope): Recor
   if (kind === 'video') {
     return {
       prompt: '',
-      video_style_prompt: '',
       modelId: null,
       duration: 0,
       aspect_ratio: '16:9',
@@ -64,7 +63,6 @@ function ensureParams(kind: NodeKind, scope: WorkflowScope, params: Record<strin
     if (merged.duration === undefined || merged.duration === '') merged.duration = 0
     if (!merged.aspect_ratio) merged.aspect_ratio = '16:9'
     if (!merged.resolution) merged.resolution = '480p'
-    if (merged.video_style_prompt === undefined) merged.video_style_prompt = ''
     if (merged.chainShots === undefined) merged.chainShots = true
     if (merged.generate_audio === undefined) merged.generate_audio = true
     if (merged.enable_web_search === undefined) merged.enable_web_search = false

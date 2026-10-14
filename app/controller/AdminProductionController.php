@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace app\controller;
 
 use app\BaseController;
+use app\model\StylePreset;
 use think\facade\Db;
 
 class AdminProductionController extends BaseController
@@ -92,6 +93,7 @@ class AdminProductionController extends BaseController
                 's.description',
                 's.visual_style',
                 's.visual_style_variant',
+                's.style_preset_id',
                 's.region',
                 's.series_workflow_id',
                 's.create_time',
@@ -102,11 +104,12 @@ class AdminProductionController extends BaseController
                 "SUM(CASE WHEN e.status = 'done' THEN 1 ELSE 0 END) AS done_episode_count",
                 "SUM(CASE WHEN e.status = 'production' THEN 1 ELSE 0 END) AS production_episode_count",
             ]))
-            ->group('s.id, s.user_id, s.title, s.description, s.visual_style, s.visual_style_variant, s.region, s.series_workflow_id, s.create_time, s.update_time')
+            ->group('s.id, s.user_id, s.title, s.description, s.visual_style, s.visual_style_variant, s.style_preset_id, s.region, s.series_workflow_id, s.create_time, s.update_time')
             ->order('s.id', 'desc')
             ->page($page, $limit);
 
         $rows = $query->select()->toArray();
+        $this->attachStylePresetNames($rows);
         $this->attachLatestRuns($rows);
 
         return [
@@ -235,6 +238,30 @@ class AdminProductionController extends BaseController
         unset($row);
     }
 
+    private function attachStylePresetNames(array &$rows): void
+    {
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = (int) ($row['style_preset_id'] ?? 0);
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+        $names = [];
+        if ($ids !== []) {
+            try {
+                $names = StylePreset::whereIn('id', array_values(array_unique($ids)))->column('name', 'id');
+            } catch (\Throwable) {
+                $names = [];
+            }
+        }
+        foreach ($rows as &$row) {
+            $id = (int) ($row['style_preset_id'] ?? 0);
+            $row['style_preset_name'] = $id > 0 ? (string) ($names[$id] ?? '') : '';
+        }
+        unset($row);
+    }
+
     private function serializeSeriesRow(array $row): array
     {
         $latestRun = is_array($row['latest_run'] ?? null) ? $row['latest_run'] : null;
@@ -247,6 +274,8 @@ class AdminProductionController extends BaseController
             'description' => (string) ($row['description'] ?? ''),
             'visual_style' => (string) ($row['visual_style'] ?? ''),
             'visual_style_variant' => (string) ($row['visual_style_variant'] ?? ''),
+            'style_preset_id' => isset($row['style_preset_id']) && $row['style_preset_id'] !== null ? (int) $row['style_preset_id'] : null,
+            'style_preset_name' => (string) ($row['style_preset_name'] ?? ''),
             'region' => (string) ($row['region'] ?? ''),
             'series_workflow_id' => $row['series_workflow_id'] === null ? null : (int) $row['series_workflow_id'],
             'episode_count' => (int) ($row['episode_count'] ?? 0),

@@ -373,17 +373,6 @@ function onSaveTemplate() {
 
               <!-- 视频参数 -->
               <template v-if="isVideo">
-                <el-form-item :label="t('视频前置提示词')" class="mb-3">
-                  <el-input
-                    v-model="step.params.video_style_prompt"
-                    type="textarea"
-                    :rows="5"
-                    :placeholder="t('可选。用于统一视频画面风格、摄影语言、色彩限制、时代背景、地区人文环境、禁用元素等；留空时使用系统默认视频风格。')"
-                  />
-                  <p class="step-hint">
-                    {{ t('填写后优先作为视频风格与人文环境前置提示词，不替代上游分镜内容、参考图一致性或时长参数。') }}
-                  </p>
-                </el-form-item>
                 <div class="video-grid">
                   <el-form-item :label="t('画幅比例')">
                     <el-select v-model="step.params.aspect_ratio" style="width: 100%">

@@ -37,6 +37,8 @@ export interface QuickCreateOptions {
   duration?: number
   count?: number
   generate_audio?: boolean
+  style_preset_id?: number
+  style_name?: string
 }
 
 export interface QuickCreateMessage {

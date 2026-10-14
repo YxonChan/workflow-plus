@@ -18,6 +18,7 @@ use app\support\ModelConfigResolver;
 use app\support\PendingImageTaskException;
 use app\support\ToapisPrivateAvatarService;
 use app\support\RedisCache;
+use app\support\SeriesStylePrompt;
 use think\facade\Db;
 
 /**
@@ -212,11 +213,11 @@ class QuickCreateController extends BaseController
             $mode,
             $model
         );
-        $options = $this->sanitizeOptions(
+        $options = $this->bindStylePresetOption($this->sanitizeOptions(
             is_array($payload['options'] ?? null) ? $payload['options'] : [],
             $mode,
             $model
-        );
+        ), $userId);
 
         $message = QuickCreateMessage::create([
             'user_id' => $userId,
@@ -320,7 +321,7 @@ class QuickCreateController extends BaseController
             $options = [];
         }
 
-        $options = $this->sanitizeOptions($options, 'image');
+        $options = $this->bindStylePresetOption($this->sanitizeOptions($options, 'image'), $userId, false);
         $options['count'] = 1;
 
         $message = QuickCreateMessage::create([
@@ -385,6 +386,11 @@ class QuickCreateController extends BaseController
         if (!is_array($options)) {
             $options = [];
         }
+        $prompt = SeriesStylePrompt::prepend(
+            $prompt,
+            SeriesStylePrompt::loadOwned((int) ($options['style_preset_id'] ?? 0), $userId),
+            $mode === 'video' ? 'video' : 'scene',
+        );
 
         // claim 后立即写一次心跳，避免在模型解析或参考图准备阶段被 stale 回收。
         $this->touchRunningMessage($messageId);
@@ -709,7 +715,47 @@ class QuickCreateController extends BaseController
             }
         }
 
+        $stylePresetId = (int) ($options['style_preset_id'] ?? 0);
+        if ($stylePresetId > 0) {
+            $out['style_preset_id'] = $stylePresetId;
+            $styleName = trim((string) ($options['style_name'] ?? ''));
+            if ($styleName !== '') {
+                $out['style_name'] = mb_substr($styleName, 0, 80);
+            }
+        }
+
         return $out;
+    }
+
+    /**
+     * 速创风格记在当次消息上。生成时再拼进提示词，聊天里仍保留用户原文。
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function bindStylePresetOption(array $options, int $userId, bool $required = true): array
+    {
+        $stylePresetId = (int) ($options['style_preset_id'] ?? 0);
+        if ($stylePresetId <= 0) {
+            unset($options['style_preset_id'], $options['style_name']);
+
+            return $options;
+        }
+
+        $preset = SeriesStylePrompt::loadOwned($stylePresetId, $userId);
+        if ($preset === null) {
+            if ($required) {
+                abort(422, '所选风格不存在');
+            }
+            unset($options['style_preset_id'], $options['style_name']);
+
+            return $options;
+        }
+
+        $options['style_preset_id'] = (int) $preset['id'];
+        $options['style_name'] = mb_substr((string) ($preset['name'] ?? ''), 0, 80);
+
+        return $options;
     }
 
     private function isMiniMaxVideoModel(?ModelConfig $model): bool

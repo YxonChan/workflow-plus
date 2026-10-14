@@ -136,6 +136,31 @@ export interface WorkflowPayload {
   scope?: WorkflowScope
 }
 
+export interface StylePreset {
+  id: number
+  code: string
+  name: string
+  summary: string
+  visual_styles: Array<'realistic' | 'anime' | '3d'>
+  parameters: {
+    medium: string[]
+    palette: string[]
+    contrast: string[]
+    lighting: string[]
+    grain: string[]
+    mood: string[]
+    lens: string[]
+    era: string[]
+  }
+  technique_prompt: string
+  prompt: string
+  lighting_prompt: string
+  is_system: number
+  sort: number
+  create_time?: string | null
+  update_time?: string | null
+}
+
 export interface PromptTemplate {
   id: number
   title: string
@@ -270,6 +295,8 @@ export interface Series {
   source_text?: string | null
   visual_style: string
   visual_style_variant?: string
+  style_preset_id?: number | null
+  style_preset?: { id: number; name: string; visual_styles: string[] } | null
   region: SeriesRegion
   /** 仅 scope=shared|all 查询时返回：作品所有者信息，用于标注"来自 XXX" */
   owner_user_id?: number

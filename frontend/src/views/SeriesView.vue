@@ -42,10 +42,9 @@ import { clearWorkerPageContext, writeWorkerPageContext } from '@/utils/workerCo
 import { t as translateMessage } from '@/i18n'
 import {
   VISUAL_STYLE_OPTIONS,
-  normalizeVisualStyleVariant,
-  visualStyleVariantOptions,
   type VisualStyle,
 } from '@/utils/visualStyle'
+import StylePresetSelect from '@/components/series/StylePresetSelect.vue'
 import { isAssetImageJobPending, isAssetImageJobQueued } from '@/utils/assetImageJob'
 import type { Asset, Episode, PromptTemplate, Series, StoryboardAssetRefNode, StoryboardRichNode, Workflow, WorkflowBundle } from '@/types'
 import WorksGallery from '@/components/series/WorksGallery.vue'
@@ -175,7 +174,7 @@ const seriesForm = ref({
   title: '',
   description: '',
   visualStyle: 'realistic' as VisualStyle,
-  visualStyleVariant: '',
+  stylePresetId: null as number | null,
   region: 'china' as 'china' | 'western',
   createMode: 'manual' as 'manual' | 'workflow',
   workflowId: null as number | null,
@@ -261,14 +260,6 @@ watch(
 const currentVisualStyleOptions = computed(() =>
   VISUAL_STYLE_OPTIONS.map((option) => ({ ...option, label: t(option.label) })),
 )
-const currentVisualStyleVariantOptions = computed(() =>
-  visualStyleVariantOptions(seriesForm.value.visualStyle).map((option) => ({
-    ...option,
-    label: t(option.label),
-    desc: option.desc ? t(option.desc) : option.desc,
-  })),
-)
-
 const workflowNameById = computed(() => {
   const map = new Map<number, string>()
   for (const workflow of workflows.value) {
@@ -280,13 +271,6 @@ const workflowNameById = computed(() => {
   }
   return map
 })
-
-watch(
-  () => seriesForm.value.visualStyle,
-  (style) => {
-    seriesForm.value.visualStyleVariant = normalizeVisualStyleVariant(style, seriesForm.value.visualStyleVariant)
-  },
-)
 
 const dashboardEpisodes = computed<Episode[]>(() => {
   const episodes = selectedSeries.value?.episodes ?? []
@@ -329,7 +313,7 @@ async function handleWizardSubmit(payload: {
   episodeCount: number | null
   promoSegmentCount: number | null
   visualStyle: 'realistic' | 'anime' | '3d'
-  visualStyleVariant?: string
+  stylePresetId?: number | null
   region: 'china' | 'western'
 }) {
   if (isSeriesSubmitting.value) return
@@ -350,7 +334,7 @@ async function handleWizardSubmit(payload: {
         description: '',
         source_text: payload.input,
         visual_style: payload.visualStyle,
-        visual_style_variant: normalizeVisualStyleVariant(payload.visualStyle, payload.visualStyleVariant),
+        style_preset_id: payload.stylePresetId ?? null,
         region: payload.region,
         series_workflow_id: b.series_workflow_id,
         ...(explicitEpisodeCount !== null ? { episode_count: explicitEpisodeCount } : {}),
@@ -366,7 +350,7 @@ async function handleWizardSubmit(payload: {
         title,
         description: '',
         visual_style: payload.visualStyle,
-        visual_style_variant: normalizeVisualStyleVariant(payload.visualStyle, payload.visualStyleVariant),
+        style_preset_id: payload.stylePresetId ?? null,
         region: payload.region,
       })
       await createEpisode(created.id, {
@@ -491,7 +475,7 @@ async function updateDashboardSeriesTitle(title: string, done: (ok: boolean) => 
       title: nextTitle,
       description: series.description ?? '',
       visual_style: series.visual_style,
-      visual_style_variant: series.visual_style_variant,
+      style_preset_id: series.style_preset_id ?? null,
       region: series.region,
       series_workflow_id: series.series_workflow_id,
     })
@@ -2530,7 +2514,7 @@ async function openCreateSeries() {
     title: '',
     description: '',
     visualStyle: 'realistic',
-    visualStyleVariant: '',
+    stylePresetId: null,
     region: 'china',
     createMode: 'manual',
     workflowId: preferredSeriesWorkflowId.value,
@@ -2595,10 +2579,7 @@ function openEditSeries() {
     title: selectedSeries.value.title,
     description: selectedSeries.value.description ?? '',
     visualStyle: (selectedSeries.value.visual_style as any) || 'realistic',
-    visualStyleVariant: normalizeVisualStyleVariant(
-      ((selectedSeries.value.visual_style as any) || 'realistic') as VisualStyle,
-      selectedSeries.value.visual_style_variant,
-    ),
+    stylePresetId: selectedSeries.value.style_preset_id ?? null,
     region: (selectedSeries.value.region as 'china' | 'western') || 'china',
     createMode: 'manual',
     workflowId: null,
@@ -2623,7 +2604,7 @@ async function submitSeries() {
         title: seriesForm.value.title.trim(),
         description: seriesForm.value.description ?? '',
         visual_style: seriesForm.value.visualStyle,
-        visual_style_variant: normalizeVisualStyleVariant(seriesForm.value.visualStyle, seriesForm.value.visualStyleVariant),
+        style_preset_id: seriesForm.value.stylePresetId,
         region: seriesForm.value.region,
       })
       ElMessage.success(t('作品已更新'))
@@ -2634,7 +2615,7 @@ async function submitSeries() {
           title: seriesForm.value.title.trim(),
           description: seriesForm.value.description ?? '',
           visual_style: seriesForm.value.visualStyle,
-          visual_style_variant: normalizeVisualStyleVariant(seriesForm.value.visualStyle, seriesForm.value.visualStyleVariant),
+          style_preset_id: seriesForm.value.stylePresetId,
           region: seriesForm.value.region,
         })
         ElMessage.success(t('作品已创建'))
@@ -2663,7 +2644,7 @@ async function submitSeries() {
           description: seriesForm.value.description || t('通过工作流创建'),
           source_text: seed || undefined,
           visual_style: seriesForm.value.visualStyle,
-          visual_style_variant: normalizeVisualStyleVariant(seriesForm.value.visualStyle, seriesForm.value.visualStyleVariant),
+          style_preset_id: seriesForm.value.stylePresetId,
           region: seriesForm.value.region,
           series_workflow_id: seriesForm.value.workflowId ?? null,
           ...(explicitEpisodeCount !== null ? { episode_count: explicitEpisodeCount } : {}),
@@ -3096,17 +3077,15 @@ async function runNextNode(options: { allowPending?: boolean } = {}) {
               class="video-prompt-shot"
             >
               <p class="video-prompt-shot__desc">{{ activeVideoPromptShot.description }}</p>
-              <template v-if="videoPromptPreview.video_style_prompt">
-                <div class="video-prompt-shot__section video-prompt-shot__section--aux">
-                  <div class="video-prompt-shot__head">
-                    <span>{{ t('视频前置提示词') }}</span>
-                    <el-button size="small" @click="copyText(videoPromptPreview.video_style_prompt)">{{ t('复制') }}</el-button>
-                  </div>
-                  <div class="video-prompt-shot__prompt-scroll video-prompt-shot__prompt-scroll--aux">
-                    <pre>{{ videoPromptPreview.video_style_prompt }}</pre>
-                  </div>
+              <div class="video-prompt-shot__section video-prompt-shot__section--aux">
+                <div class="video-prompt-shot__head">
+                  <span>{{ videoPromptPreview.style_name ? t('作品风格：{name}', { name: videoPromptPreview.style_name }) : t('未设置作品风格，按画风默认') }}</span>
+                  <el-button v-if="videoPromptPreview.style_prompt" size="small" @click="copyText(videoPromptPreview.style_prompt)">{{ t('复制') }}</el-button>
                 </div>
-              </template>
+                <div v-if="videoPromptPreview.style_prompt" class="video-prompt-shot__prompt-scroll video-prompt-shot__prompt-scroll--aux">
+                  <pre>{{ videoPromptPreview.style_prompt }}</pre>
+                </div>
+              </div>
               <div v-if="activeVideoPromptShot.reference_images.length" class="video-prompt-shot__refs">
                 <span v-for="ref in activeVideoPromptShot.reference_images" :key="ref.alias">
                     {{ ref.alias }} · {{ ref.type || 'reference' }} · {{ ref.name || t('未命名') }}
@@ -3351,27 +3330,13 @@ async function runNextNode(options: { allowPending?: boolean } = {}) {
           </el-radio-group>
           <div class="form-hint">{{ t('定义整部剧本的画风，会影响所有分镜图片的生成效果。') }}</div>
         </el-form-item>
-        <el-form-item :label="t('细分风格')">
-          <el-select
-            v-model="seriesForm.visualStyleVariant"
-            clearable
-            filterable
-            :placeholder="t('跟随一级风格')"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="option in currentVisualStyleVariantOptions"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            >
-              <div class="style-variant-option">
-                <span>{{ option.label }}</span>
-                <em v-if="option.desc">{{ option.desc }}</em>
-              </div>
-            </el-option>
-          </el-select>
-          <div class="form-hint">{{ t('可选。用于进一步控制时代感、线条、色彩和渲染方式。') }}</div>
+        <el-form-item :label="t('作品风格')">
+          <StylePresetSelect
+            :key="seriesForm.id"
+            v-model="seriesForm.stylePresetId"
+            :visual-style="seriesForm.visualStyle"
+            :show-edit-hints="seriesForm.id > 0"
+          />
         </el-form-item>
         <el-form-item :label="t('剧本简介')">
           <el-input v-model="seriesForm.description" type="textarea" :rows="3" :placeholder="t('简要描述这部剧本的内容...')" />

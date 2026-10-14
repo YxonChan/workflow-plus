@@ -37,6 +37,9 @@ use app\support\MediaStorage;
 use app\support\NovelImportService;
 use app\support\PromoVideoSegmentConfig;
 use app\support\RedisCache;
+use app\support\SeriesStylePrompt;
+use app\support\StylePresetDefaults;
+use app\model\StylePreset;
 use app\support\StoryboardRequestOptimizer;
 use app\support\VideoAssetImageRefreshService;
 use app\support\VideoVoiceAssetService;
@@ -934,7 +937,11 @@ class SeriesController extends BaseController
         }
         $currentVideoOptions = $this->videoNodeRequestOptions($nodeParams);
         $currentChainShots = (bool) ($nodeParams['chainShots'] ?? true);
-        $currentVideoStylePrompt = $this->videoStylePromptFromNodeParams($nodeParams);
+        $previousContext = $targetJob->getAttr('request_context_json') ?: [];
+        $previousFinal = is_array($previousContext) ? (string) ($previousContext['final_prompt'] ?? '') : '';
+        if (SeriesStylePrompt::rerunUsesCurrentStyle($prompt, $previousFinal)) {
+            $prompt = $this->defaultVideoNodePrompt();
+        }
         $shotData = $targetJob->getAttr('shot_data_json');
         $rerunShot = is_array($shotData) ? $shotData : [];
         $rerunShot['index'] = (int) ($rerunShot['index'] ?? $targetJob->getAttr('shot_index'));
@@ -951,7 +958,7 @@ class SeriesController extends BaseController
             trim((string) ($target['label'] ?? $target['data']['label'] ?? '视频生成'))
         );
 
-        Db::transaction(function () use ($run, $runNode, $targetJob, $prompt, $model, $currentVideoOptions, $currentChainShots, $currentVideoStylePrompt): void {
+        Db::transaction(function () use ($run, $runNode, $targetJob, $prompt, $model, $currentVideoOptions, $currentChainShots): void {
             $chainShots = $currentChainShots;
             $targetIndex = (int) $targetJob->getAttr('shot_index');
             $jobs = $this->latestVideoJobsForRunNode((int) $runNode->getAttr('id'));
@@ -981,6 +988,8 @@ class SeriesController extends BaseController
                 }
                 unset(
                     $context['final_prompt'],
+                    $context['video_style_prompt'],
+                    $context['video_style_source'],
                     $context['idempotency_key'],
                     $context['task_id'],
                     $context['provider_task_id'],
@@ -993,7 +1002,6 @@ class SeriesController extends BaseController
                     $context['previous_video_url'] = (string) $job->getAttr('video_url');
                     $context['model_config_id'] = (int) $model->getAttr('id');
                     $context['video_options'] = $currentVideoOptions;
-                    $context['video_style_prompt'] = $currentVideoStylePrompt;
                 }
 
                 $jobData = [
@@ -2004,7 +2012,8 @@ class SeriesController extends BaseController
             'description' => $description,
             'source_text' => $sourceText !== '' ? $sourceText : null,
             'visual_style' => $visualStyle,
-            'visual_style_variant' => $this->normalizeVisualStyleVariant($visualStyle, (string) ($payload['visual_style_variant'] ?? '')),
+            'visual_style_variant' => '',
+            'style_preset_id' => $this->resolveIncomingStylePresetId($this->effectiveUserId(), $visualStyle, $payload),
             'region' => $this->normalizeSeriesRegion((string) ($payload['region'] ?? 'china')),
             'series_workflow_id' => isset($payload['series_workflow_id']) && $payload['series_workflow_id'] !== ''
                 ? (int) $payload['series_workflow_id']
@@ -2172,9 +2181,8 @@ class SeriesController extends BaseController
             'title' => trim($payload['title']),
             'description' => $payload['description'] ?? '',
             'visual_style' => $visualStyle,
-            'visual_style_variant' => array_key_exists('visual_style_variant', $payload)
-                ? $this->normalizeVisualStyleVariant($visualStyle, (string) $payload['visual_style_variant'])
-                : $this->normalizeVisualStyleVariant($visualStyle, (string) ($series->getAttr('visual_style_variant') ?? '')),
+            'visual_style_variant' => '',
+            'style_preset_id' => $this->resolveUpdatedStylePresetId($series, $visualStyle, $payload),
             'region' => array_key_exists('region', $payload)
                 ? $this->normalizeSeriesRegion((string) $payload['region'])
                 : (string) ($series->getAttr('region') ?? 'china'),
@@ -2982,7 +2990,9 @@ class SeriesController extends BaseController
         }
         $nodeParams = is_array($target['data']['params'] ?? null) ? $target['data']['params'] : [];
         $nodePrompt = $this->defaultVideoNodePrompt();
-        $videoStylePrompt = $this->videoStylePromptFromNodeParams($nodeParams);
+        $series = $episode->series;
+        $stylePreset = SeriesStylePrompt::presetForSeries($series instanceof Series ? $series : null);
+        $previewVisualStyle = $this->normalizeVisualStyle((string) ($series instanceof Series ? $series->getAttr('visual_style') : 'realistic'));
         $readyShots = $this->filterEpisodeVideoShotsReady($shots);
         $chainShots = (bool) ($nodeParams['chainShots'] ?? true);
         $items = [];
@@ -3014,14 +3024,14 @@ class SeriesController extends BaseController
             $items[] = [
                 'index' => $index,
                 'description' => $editorContentText,
-                'compiled_prompt' => $this->buildVideoPrompt($episode, (string) ($target['label'] ?? '视频生成'), $nodePrompt, $shotData, $assets, $videoSeconds, $videoStylePrompt, $chainShots),
+                'compiled_prompt' => $this->buildVideoPrompt($episode, (string) ($target['label'] ?? '视频生成'), $nodePrompt, $shotData, $assets, $videoSeconds, $chainShots),
                 'content_text' => $editorContentText,
                 'content_rich_json' => isset($shotData['content_rich_json']) && is_array($shotData['content_rich_json']) ? $shotData['content_rich_json'] : [],
                 'asset_refs' => isset($shotData['asset_refs']) && is_array($shotData['asset_refs']) ? $shotData['asset_refs'] : [],
                 'duration' => $shotDurationLabel,
                 'source_image_url' => $imageUrl,
                 'input_image_url' => $imageUrl,
-                'prompt' => $this->buildVideoPrompt($episode, (string) ($target['label'] ?? '视频生成'), $nodePrompt, $shotData, $assets, $videoSeconds, $videoStylePrompt, $chainShots),
+                'prompt' => $this->buildVideoPrompt($episode, (string) ($target['label'] ?? '视频生成'), $nodePrompt, $shotData, $assets, $videoSeconds, $chainShots),
                 'reference_images' => array_map(
                     static fn (array $item, string $alias): array => [
                         'alias' => $alias,
@@ -3054,8 +3064,8 @@ class SeriesController extends BaseController
             'workflow_node_id' => $nodeId,
             'label' => (string) ($target['label'] ?? '视频生成'),
             'video_options' => $this->videoNodeRequestOptions($nodeParams),
-            'video_style_prompt' => $videoStylePrompt,
-            'video_style_source' => $videoStylePrompt === '' ? 'system_default' : 'custom',
+            'style_name' => (string) ($stylePreset['name'] ?? ''),
+            'style_prompt' => SeriesStylePrompt::compose($stylePreset, $previewVisualStyle, 'video'),
             'chain_shots' => $chainShots,
             'shot_count' => count($items),
             'shots' => $items,
@@ -3788,7 +3798,6 @@ class SeriesController extends BaseController
         $nodeId = (string) ($target['id'] ?? '');
         $nodeParams = is_array($target['data']['params'] ?? null) ? $target['data']['params'] : [];
         $nodePrompt = $this->defaultVideoNodePrompt();
-        $videoStylePrompt = $this->videoStylePromptFromNodeParams($nodeParams);
         $videoUserId = $this->seriesOwnerId(null, (int) ($episode->getAttr('user_id') ?: $run->getAttr('user_id')));
         $this->assertVideoGenerationAllowedForUser($videoUserId);
 
@@ -3859,10 +3868,8 @@ class SeriesController extends BaseController
                 'prompt_source' => [
                     'source' => 'system_video_generator',
                     'is_system' => true,
-                    'video_style_source' => $videoStylePrompt === '' ? 'system_default' : 'custom',
                 ],
                 'video_params' => $this->videoNodeRequestOptions($nodeParams),
-                'video_style_prompt' => $videoStylePrompt,
                 'upstream_output_keys' => array_keys($upstreamOutputs),
                 'shot_count' => count($shots),
                 'only_shot_index' => $singleShotMode ? $onlyShotIndex : null,
@@ -3981,8 +3988,6 @@ class SeriesController extends BaseController
                         'node_id' => $nodeId,
                         'shot_index' => $index,
                         'only_shot_index' => $singleShotMode ? $onlyShotIndex : null,
-                        'video_style_prompt' => $videoStylePrompt,
-                        'video_style_source' => $videoStylePrompt === '' ? 'system_default' : 'custom',
                         'image_url' => $inputImageUrl,
                         'source_image_url' => $imageUrl,
                         'previous_end_frame_url' => $previousEndFrameUrl,
@@ -4299,6 +4304,8 @@ class SeriesController extends BaseController
         $data['source_text'] = $sourceText !== '' ? $sourceText : null;
         $seriesWorkflowId = (int) ($series->getAttr('series_workflow_id') ?? 0);
         $data['series_workflow_name'] = $this->workflowName($seriesWorkflowId);
+        $data['style_preset'] = $this->serializeSeriesStylePreset($series);
+        $data['style_preset_id'] = $data['style_preset']['id'] ?? null;
         $episodes = [];
         foreach ($series->episodes as $episode) {
             if ($episode instanceof Episode) {
@@ -10407,9 +10414,9 @@ PROMPT;
         $episodeTitle = (string) $episode->getAttr('title');
         $series = $episode->series;
         $visualStyle = $this->normalizeVisualStyle((string) ($series?->getAttr('visual_style') ?? 'realistic'));
-        $visualStyleVariant = $this->normalizeVisualStyleVariant($visualStyle, (string) ($series?->getAttr('visual_style_variant') ?? ''));
+        $preset = SeriesStylePrompt::presetForSeries($series instanceof Series ? $series : null);
         $regionRule = $this->seriesRegionPromptRule($series);
-        $styleRule = $this->seriesVisualStylePromptRule($visualStyle, $visualStyleVariant);
+        $styleRule = SeriesStylePrompt::compose($preset, $visualStyle, 'frame');
 
         $assetLines = [];
         foreach ($assets as $asset) {
@@ -10660,7 +10667,7 @@ PROMPT;
         return $text;
     }
 
-    private function buildVideoPrompt(Episode $episode, string $label, string $nodePrompt, array $shotData, array $assets, int $videoDurationSeconds = 0, string $videoStylePrompt = '', bool $chainShots = true): string
+    private function buildVideoPrompt(Episode $episode, string $label, string $nodePrompt, array $shotData, array $assets, int $videoDurationSeconds = 0, bool $chainShots = true): string
     {
         $description = trim((string) ($shotData['description'] ?? ''));
         $sourceImageUrl = trim((string) ($shotData['source_image_url'] ?? ''));
@@ -10672,22 +10679,22 @@ PROMPT;
             $isContinuous
         );
         $description = $this->replaceVideoPromptNamesByReferenceAliases($description, $referenceImageMeta);
-        $styleRule = $this->videoStylePromptForPrompt($videoStylePrompt);
+        $series = $episode->series;
+        $visualStyle = $this->normalizeVisualStyle((string) ($series instanceof Series ? $series->getAttr('visual_style') : 'realistic'));
+        $preset = SeriesStylePrompt::presetForSeries($series instanceof Series ? $series : null);
         $referenceText = $this->buildChineseVideoReferencePrompt($referenceImageMeta, $isContinuous);
         $sceneLine = $this->extractVideoPromptSceneLine($description);
         $timelineText = $this->buildChineseVideoTimeline($description, $videoDurationSeconds);
 
-        $parts = array_values(array_filter([
-            $this->videoNoSubtitleHardRule(),
+        return $this->enforceVideoNoSubtitleRule(SeriesStylePrompt::assembleVideoPrompt(
+            SeriesStylePrompt::compose($preset, $visualStyle, 'video'),
             $referenceText,
-            $sceneLine !== '' ? "场景：{$sceneLine}" : '',
+            $sceneLine,
             $timelineText,
-            "视觉制作规则：{$styleRule}",
+            SeriesStylePrompt::videoUniversalRules(),
             '要求：画面稳定，人物一致，服装一致，动作流畅自然，情感真实，镜头运动平滑，禁止新增无关人物、无关地点、字幕、水印、UI、分屏、故事板拼贴和明显变形。',
             $this->videoNoSubtitleHardRule(),
-        ], static fn (string $value): bool => trim($value) !== ''));
-
-        return $this->enforceVideoNoSubtitleRule(implode("\n\n", $parts));
+        ));
     }
 
     /** 视频全局硬性规则：禁止任何形式字幕/屏幕文字。 */
@@ -10717,77 +10724,6 @@ PROMPT;
         return '基于当前分镜描述生成视频片段；涉及人物、人物造型、场景、道具时优先参考资产库保持一致性。画面不要字幕。';
     }
 
-    private function videoStylePromptFromNodeParams(array $nodeParams): string
-    {
-        foreach (['video_style_prompt', 'videoStylePrompt', 'style_prompt', 'stylePrompt'] as $key) {
-            if (!array_key_exists($key, $nodeParams)) {
-                continue;
-            }
-            $value = $nodeParams[$key];
-            if (is_array($value) || is_object($value)) {
-                continue;
-            }
-            $prompt = trim(str_replace(["\r\n", "\r"], "\n", (string) $value));
-            if ($prompt !== '') {
-                return $prompt;
-            }
-        }
-        return '';
-    }
-
-    private function videoStylePromptForPrompt(string $videoStylePrompt): string
-    {
-        $prompt = trim(str_replace(["\r\n", "\r"], "\n", $videoStylePrompt));
-        if ($prompt !== '') {
-            return $prompt;
-        }
-        return $this->defaultVideoStylePrompt();
-    }
-
-    private function videoStylePromptForQueuedJob(VideoJob $job, array &$context): string
-    {
-        $prompt = trim(str_replace(["\r\n", "\r"], "\n", (string) ($context['video_style_prompt'] ?? '')));
-        if ($prompt !== '') {
-            return $prompt;
-        }
-
-        $workflowId = (int) ($job->getAttr('workflow_id') ?? 0);
-        $nodeId = trim((string) $job->getAttr('node_id'));
-        if ($workflowId <= 0 || $nodeId === '') {
-            $context['video_style_source'] = (string) ($context['video_style_source'] ?? 'system_default');
-            return '';
-        }
-
-        $workflow = Workflow::find($workflowId);
-        if (!$workflow instanceof Workflow) {
-            $context['video_style_source'] = (string) ($context['video_style_source'] ?? 'system_default');
-            return '';
-        }
-
-        $graph = $workflow->getAttr('graph') ?: [];
-        $nodes = is_array($graph['nodes'] ?? null) ? $graph['nodes'] : [];
-        foreach ($nodes as $node) {
-            if (!is_array($node) || (string) ($node['id'] ?? '') !== $nodeId) {
-                continue;
-            }
-            $params = is_array($node['data']['params'] ?? null) ? $node['data']['params'] : [];
-            $prompt = $this->videoStylePromptFromNodeParams($params);
-            if ($prompt !== '') {
-                $context['video_style_prompt'] = $prompt;
-                $context['video_style_source'] = 'custom_current_workflow';
-                return $prompt;
-            }
-            break;
-        }
-
-        $context['video_style_source'] = (string) ($context['video_style_source'] ?? 'system_default');
-        return '';
-    }
-
-    private function defaultVideoStylePrompt(): string
-    {
-        return 'Style: live-action cinematic realism, natural motion, consistent lighting, coherent physics. No subtitles, no burned-in captions, no on-screen text.';
-    }
 
     private function isDirectVideoPromptOverride(string $nodePrompt, array $context): bool
     {
@@ -12044,7 +11980,6 @@ PROMPT;
         $videoSeconds = $this->durationSecondsForVideo($duration, $options);
         $nodePrompt = trim((string) $job->getAttr('node_prompt'));
         $isDirectPromptOverride = $this->isDirectVideoPromptOverride($nodePrompt, $context);
-        $videoStylePrompt = $isDirectPromptOverride ? '' : $this->videoStylePromptForQueuedJob($job, $context);
         if ($isDirectPromptOverride) {
             $prompt = $nodePrompt;
             $includeContinuityFrame = (bool) ($context['chained_from_previous_end_frame'] ?? false);
@@ -12062,7 +11997,6 @@ PROMPT;
                 $shotData,
                 $assets,
                 $videoSeconds,
-                $videoStylePrompt,
                 $chainShots,
             );
         }
@@ -17625,64 +17559,88 @@ PROMPT;
     /**
      * 规范化剧本内容地区（中国 / 欧美）。
      */
+    private function serializeSeriesStylePreset(Series $series): ?array
+    {
+        $presetId = (int) ($series->getAttr('style_preset_id') ?? 0);
+        if ($presetId <= 0) {
+            return null;
+        }
+        $preset = StylePreset::where('id', $presetId)
+            ->where('user_id', (int) $series->getAttr('user_id'))
+            ->find();
+        if (!$preset instanceof StylePreset) {
+            return null;
+        }
+        $data = SeriesStylePrompt::fromModel($preset);
+
+        return [
+            'id' => (int) $data['id'],
+            'name' => (string) $data['name'],
+            'visual_styles' => $data['visual_styles'],
+        ];
+    }
+
+    private function resolveIncomingStylePresetId(int $ownerId, string $visualStyle, array $payload): ?int
+    {
+        if (array_key_exists('style_preset_id', $payload)) {
+            return $this->requireStylePresetId($ownerId, $visualStyle, $payload['style_preset_id']);
+        }
+
+        $code = trim((string) ($payload['style_code'] ?? ''));
+        if ($code === '') {
+            $code = trim((string) ($payload['visual_style_variant'] ?? ''));
+        }
+        if ($code === '') {
+            return null;
+        }
+
+        StylePresetController::ensureTable();
+        $preset = StylePresetDefaults::findOfficialByCode($ownerId, $code);
+        if (!$preset instanceof StylePreset || !SeriesStylePrompt::applies(SeriesStylePrompt::fromModel($preset), $visualStyle)) {
+            return null;
+        }
+
+        return (int) $preset->getAttr('id');
+    }
+
+    private function resolveUpdatedStylePresetId(Series $series, string $visualStyle, array $payload): ?int
+    {
+        $ownerId = (int) $series->getAttr('user_id');
+        if (array_key_exists('style_preset_id', $payload)) {
+            return $this->requireStylePresetId($ownerId, $visualStyle, $payload['style_preset_id']);
+        }
+
+        $currentId = (int) ($series->getAttr('style_preset_id') ?? 0);
+        if ($currentId <= 0) {
+            return null;
+        }
+        $preset = StylePreset::where('id', $currentId)->where('user_id', $ownerId)->find();
+        if (!$preset instanceof StylePreset || !SeriesStylePrompt::applies(SeriesStylePrompt::fromModel($preset), $visualStyle)) {
+            return null;
+        }
+
+        return $currentId;
+    }
+
+    private function requireStylePresetId(int $ownerId, string $visualStyle, mixed $raw): ?int
+    {
+        if ($raw === null || $raw === '' || (int) $raw <= 0) {
+            return null;
+        }
+        $preset = StylePreset::where('id', (int) $raw)->where('user_id', $ownerId)->find();
+        if (!$preset instanceof StylePreset || !SeriesStylePrompt::applies(SeriesStylePrompt::fromModel($preset), $visualStyle)) {
+            abort(422, '所选风格不存在或不适用于当前画风');
+        }
+
+        return (int) $preset->getAttr('id');
+    }
+
     private function normalizeVisualStyle(string $style): string
     {
         $style = strtolower(trim($style));
         return in_array($style, ['realistic', 'anime', '3d'], true) ? $style : 'realistic';
     }
 
-    private function normalizeVisualStyleVariant(string $style, string $variant): string
-    {
-        $style = $this->normalizeVisualStyle($style);
-        $variant = strtolower(trim($variant));
-        if ($variant === '') {
-            return '';
-        }
-
-        $allowed = [
-            'realistic' => ['cinematic', 'short_drama', 'documentary', 'commercial', 'noir'],
-            'anime' => ['showa_anime', 'classic_american_cartoon', 'heisei_classic', 'moe', 'kyoto_animation', 'shinkai', 'modern_mobile_game', 'guoman', 'cel_shaded'],
-            '3d' => ['animated_feature', 'unreal', 'stylized_3d', 'clay', 'low_poly'],
-        ];
-
-        return in_array($variant, $allowed[$style] ?? [], true) ? $variant : '';
-    }
-
-    private function seriesVisualStylePromptRule(string $style, string $variant = ''): string
-    {
-        $style = $this->normalizeVisualStyle($style);
-        $variant = $this->normalizeVisualStyleVariant($style, $variant);
-        $base = match ($style) {
-            'anime' => '动漫二次元风格，手绘质感，色彩鲜艳，线条清晰。Anime style, 2D hand-drawn look, vibrant colors, clean lines.',
-            '3d' => '3D渲染风格，精细建模，电影级光影，高对比度。3D render style, high detail modeling, cinematic lighting, polished 3D look.',
-            default => '电影感真实质感，真人拍摄效果，写实画风。Cinematic realistic style, live-action look, highly detailed textures.',
-        };
-
-        $variantRule = match ($variant) {
-            'cinematic' => '细分风格：电影感写实，使用影视剧剧照质感、自然表演、真实镜头景深和克制调色。',
-            'short_drama' => '细分风格：短剧写实，强调人物关系、清晰表演、现实生活场景和适合短剧平台的直接叙事。',
-            'documentary' => '细分风格：纪实摄影，自然光、生活流、轻修饰、现场感强。',
-            'commercial' => '细分风格：商业广告片，画面干净高级，布光精致，材质和人物状态更 polished。',
-            'noir' => '细分风格：暗调悬疑，低调光、高反差、阴影层次、紧张神秘氛围。',
-            'showa_anime' => '细分风格：昭和年代赛璐璐动画感，复古线条、胶片颗粒、低饱和怀旧色彩、手绘背景。',
-            'classic_american_cartoon' => '细分风格：1940-1950 年代经典美式影院手绘卡通感，赛璐璐上色、清晰墨线、夸张肢体表演、弹性形变、复古胶片颗粒、温暖手绘背景和高对比舞台式灯光；借鉴黄金时代美国动画语言，但不要复刻任何既有角色、标志或受版权保护形象。',
-            'heisei_classic' => '细分风格：平成经典电视动画感，清晰赛璐璐线稿、90s-00s 配色、稳定角色设定和干净分层上色。',
-            'moe' => '细分风格：萌系二次元，圆润脸型、大眼睛、柔软线条、明亮可爱配色、表情细腻。',
-            'kyoto_animation' => '细分风格：清爽日系青春动画感，柔和高饱和色彩、干净线条、细腻表情、日常生活光影。',
-            'shinkai' => '细分风格：高透明度天空、强烈逆光、细腻城市背景、空气感光晕和电影级日系动画色彩。',
-            'modern_mobile_game' => '细分风格：现代手游二次元立绘质感，精致角色设计、高饱和光效、干净数字绘和细密材质层次。',
-            'guoman' => '细分风格：现代国漫风，东方审美、细腻角色造型、数字动画渲染、层次丰富背景。',
-            'cel_shaded' => '细分风格：赛璐璐动画风，明确色块、硬边阴影、线稿清晰、干净平涂。',
-            'animated_feature' => '细分风格：动画电影3D，友好角色比例、柔和材质、电影动画灯光和精致表情。',
-            'unreal' => '细分风格：虚幻引擎写实，高精模型、真实材质、体积光、游戏过场级渲染。',
-            'stylized_3d' => '细分风格：风格化3D，夸张造型、简化材质、清晰轮廓、鲜明色彩。',
-            'clay' => '细分风格：黏土动画，手工塑形材质、轻微指纹纹理、定格动画质感、柔和棚拍光。',
-            'low_poly' => '细分风格：低多边形，几何切面、简洁形体、清晰色块和轻量游戏美术感。',
-            default => '',
-        };
-
-        return $variantRule !== '' ? $base . ' ' . $variantRule : $base;
-    }
 
     private function normalizeSeriesRegion(string $region): string
     {

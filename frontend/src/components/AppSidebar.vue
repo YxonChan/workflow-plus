@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { resolveIcon } from '@/utils/iconRegistry'
+import CreditPurchase from '@/components/credits/CreditPurchase.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -47,9 +48,10 @@ const navItems = computed(() => {
     { name: 'series', label: t('作品'), desc: t('剧本到成片'), icon: 'Film' },
     { name: 'scriptCreation', label: t('剧本创作'), desc: t('AI 自动创作'), icon: 'EditPen' },
     { name: 'quickCreate', label: t('速创'), desc: t('对话快速生成'), icon: 'MagicStick' },
+    { name: 'styles', label: t('风格化'), desc: t('整片质感色调'), icon: 'Brush' },
     { name: 'assets', label: t('资产'), desc: t('角色场景道具'), icon: 'Picture' },
     { name: 'workflow', label: t('流程'), desc: t('模板与编排'), icon: 'Share' },
-    { name: 'myCredits', label: t('积分'), desc: t('消耗清单'), icon: 'Tickets' },
+    { name: 'myCredits', label: t('积分'), desc: t('充值与流水'), icon: 'Tickets' },
   ]
 })
 
@@ -61,7 +63,12 @@ function navigate(name: string) {
   void router.push({ name })
 }
 
+function openRecharge() {
+  appStore.rechargeOpen = true
+}
+
 function logout() {
+  appStore.rechargeOpen = false
   auth.logout()
   void router.replace({ name: 'login' })
 }
@@ -117,7 +124,6 @@ function goHome() {
             <span class="username">{{ auth.user?.display_name || auth.user?.username || t('当前用户') }}</span>
             <span class="user-role">
               {{ auth.user?.role === 'admin' ? t('管理员') : t('普通用户') }}
-              · {{ t('积分') }} {{ creditBalanceText }}
             </span>
           </div>
         </div>
@@ -133,6 +139,19 @@ function goHome() {
         </template>
       </el-dropdown>
 
+      <div class="sidebar-credits" :class="{ 'is-collapsed': isRailCollapsed }">
+        <span v-if="!isRailCollapsed" class="credit-summary">
+          <el-icon><component :is="resolveIcon('Tickets')" /></el-icon>
+          <span>{{ t('积分') }} <strong>{{ creditBalanceText }}</strong></span>
+        </span>
+        <el-tooltip :content="t('充值')" :disabled="!isRailCollapsed" placement="right">
+          <button type="button" class="recharge-button" :aria-label="t('充值')" @click="openRecharge">
+            <el-icon><component :is="resolveIcon('Wallet')" /></el-icon>
+            <span v-if="!isRailCollapsed">{{ t('充值') }}</span>
+          </button>
+        </el-tooltip>
+      </div>
+
       <button type="button" class="sidebar-toggle" @click="toggleRail" :title="isRailCollapsed ? t('展开菜单') : t('收起菜单')">
         <el-icon :size="16">
           <component :is="resolveIcon(isRailCollapsed ? 'Expand' : 'Fold')" />
@@ -140,6 +159,7 @@ function goHome() {
       </button>
     </div>
   </aside>
+  <CreditPurchase v-model="appStore.rechargeOpen" @paid="appStore.rechargeRevision++" />
 </template>
 
 <style scoped lang="scss">
@@ -252,6 +272,22 @@ function goHome() {
   color: #8c9ab7;
 }
 
+.credit-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: #dbeafe;
+  font-size: 12px;
+}
+
+.credit-summary > span { overflow-wrap: anywhere; }
+.credit-summary strong { color: #f8fafc; font-variant-numeric: tabular-nums; }
+
+.credit-summary .el-icon {
+  color: #67e8f9;
+}
+
 .username,
 .language-toggle,
 .sidebar-toggle {
@@ -358,6 +394,34 @@ function goHome() {
 .user-dropdown {
   width: 100%;
 }
+
+.recharge-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  min-height: 36px;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  border-radius: 8px;
+  color: #dffbff;
+  background: rgba(34, 211, 238, 0.1);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+
+.recharge-button:hover {
+  border-color: rgba(103, 232, 249, 0.65);
+  background: rgba(34, 211, 238, 0.18);
+}
+
+.recharge-button:focus-visible { outline: 2px solid #67e8f9; outline-offset: 3px; }
+.sidebar-credits { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sidebar-credits.is-collapsed { justify-content: center; }
+.sidebar-credits.is-collapsed .recharge-button { width: 40px; padding: 0; }
 
 .user-profile {
   display: flex;

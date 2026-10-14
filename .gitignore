@@ -1,5 +1,7 @@
 *.log
 .env
+/.env.local
+/.env.dev
 /.env.server*
 composer.phar
 composer.lock

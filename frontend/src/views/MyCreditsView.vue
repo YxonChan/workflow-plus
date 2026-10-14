@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PageToolbar from '@/components/ui/PageToolbar.vue'
+import { useAppStore } from '@/stores/app'
 import { listMyCreditLedger, type CreditLedgerItem, type CreditLedgerSummary } from '@/api/credit'
 import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const appStore = useAppStore()
 
 const loading = ref(false)
 const rows = ref<CreditLedgerItem[]>([])
-const balance = ref(0)
+const balance = ref<number | null>(null)
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -40,7 +42,7 @@ const modalityLabel: Record<string, string> = {
   video: '视频',
 }
 
-const balanceText = computed(() => formatCredits(balance.value || Number(auth.user?.credit_balance || 0)))
+const balanceText = computed(() => formatCredits(balance.value ?? Number(auth.user?.credit_balance || 0)))
 
 async function load(resetPage = false) {
   if (resetPage) page.value = 1
@@ -94,7 +96,14 @@ function amountClass(row: CreditLedgerItem) {
 }
 
 onMounted(() => {
-  void load()
+  void load().catch(() => {})
+})
+
+watch(() => appStore.rechargeRevision, () => {
+  entryType.value = 'topup'
+  modality.value = ''
+  dateRange.value = null
+  void load(true).catch(() => {})
 })
 </script>
 
@@ -103,9 +112,11 @@ onMounted(() => {
     <PageToolbar
       kicker="MY CREDITS"
       :title="t('积分清单')"
-      :subtitle="t('查看本人积分余额、消耗汇总与扣费流水。')"
     >
       <template #actions>
+        <el-button type="primary" @click="appStore.rechargeOpen = true">
+          <el-icon><Wallet /></el-icon><span>{{ t('充值') }}</span>
+        </el-button>
         <el-select v-model="entryType" clearable :placeholder="t('全部类型')" style="width: 120px" @change="load(true)">
           <el-option :label="t('消耗')" value="consume" />
           <el-option :label="t('充值')" value="topup" />
@@ -291,6 +302,17 @@ onMounted(() => {
 .credits-pager {
   display: flex;
   justify-content: flex-end;
+}
+
+:deep(.page-toolbar) { flex-wrap: wrap; }
+:deep(.page-toolbar__actions) { flex-wrap: wrap; }
+
+@media (max-width: 600px) {
+  .my-credits-view__body { padding: var(--space-md); }
+  .stat-tile { min-width: 0; padding: 14px; }
+  .stat-tile strong { font-size: 20px; overflow-wrap: anywhere; }
+  .stat-tile--primary strong { font-size: 24px; }
+  .credits-pager { overflow-x: auto; justify-content: flex-start; }
 }
 
 @media (max-width: 1100px) {

@@ -133,7 +133,7 @@ SQL);
             ]);
 
             $controller = new SeriesController($app);
-            $series = $controller->createAgentSeriesAndQueueWorkflow($userId, [
+            $seriesPayload = [
                 'title' => $title,
                 'description' => $sourceText !== '' ? mb_substr($sourceText, 0, 1000) : '[Agent 上传剧本文件]',
                 'visual_style' => $payload['visual_style'] ?? 'realistic',
@@ -147,7 +147,14 @@ SQL);
                 'source_file_token' => $sourceFileToken,
                 'user_id' => $userId,
                 'agent_task_no' => (string) $task->getAttr('task_no'),
-            ]);
+            ];
+            if (array_key_exists('style_preset_id', $payload)) {
+                $seriesPayload['style_preset_id'] = $payload['style_preset_id'];
+            }
+            if (trim((string) ($payload['style_code'] ?? '')) !== '') {
+                $seriesPayload['style_code'] = $payload['style_code'];
+            }
+            $series = $controller->createAgentSeriesAndQueueWorkflow($userId, $seriesPayload);
 
             $run = is_array($series['workflow_run'] ?? null) ? $series['workflow_run'] : [];
             $task->save([

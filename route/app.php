@@ -12,6 +12,7 @@ Route::get('series', fn () => redirect('/admin/series'));
 Route::get('workflow', fn () => redirect('/admin/workflow'));
 Route::get('models', fn () => redirect('/admin/models'));
 Route::get('assets', fn () => redirect('/admin/assets'));
+Route::get('styles', fn () => redirect('/admin/styles'));
 
 Route::group('api', function () {
     Route::post('auth/login', 'AuthController/login');
@@ -19,6 +20,12 @@ Route::group('api', function () {
     Route::post('auth/me', 'AuthController/me');
 
     Route::post('credits/ledger', 'CreditController/ledger');
+
+    Route::get('payments/packages', 'PaymentController/packages');
+    Route::post('payments/create', 'PaymentController/create');
+    Route::post('payments/status', 'PaymentController/status');
+    Route::post('payments/orders', 'PaymentController/orders');
+    Route::post('payments/wechat/notify', 'PaymentController/notify');
 
     Route::post('agent/script/upload', 'AgentTaskController/uploadScript');
     Route::post('agent/tasks/create', 'AgentTaskController/create');
@@ -74,6 +81,12 @@ Route::group('api', function () {
     Route::post('prompt-templates/create', 'PromptTemplateController/save');
     Route::post('prompt-templates/update', 'PromptTemplateController/update');
     Route::post('prompt-templates/delete', 'PromptTemplateController/delete');
+
+    Route::post('style-presets/list', 'StylePresetController/index');
+    Route::post('style-presets/create', 'StylePresetController/save');
+    Route::post('style-presets/update', 'StylePresetController/update');
+    Route::post('style-presets/delete', 'StylePresetController/delete');
+    Route::post('style-presets/duplicate', 'StylePresetController/duplicate');
 
     // Assets
     Route::post('assets/list', 'AssetController/index');

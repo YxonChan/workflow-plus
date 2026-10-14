@@ -157,7 +157,7 @@ abstract class BaseController
         }
 
         $path = trim((string) $this->request->pathinfo(), '/');
-        if (in_array($path, ['api/auth/login', 'api/auth/refresh'], true)) {
+        if (in_array($path, ['api/auth/login', 'api/auth/refresh', 'api/payments/wechat/notify'], true)) {
             return true;
         }
 

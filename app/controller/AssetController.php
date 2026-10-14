@@ -22,6 +22,7 @@ use app\support\ImageProviderTaskState;
 use app\support\AssetLookService;
 use app\support\ToapisPrivateAvatarService;
 use app\support\CharacterAssetClassifier;
+use app\support\SeriesStylePrompt;
 use app\support\ModelConfigResolver;
 use app\support\MediaStorage;
 use app\support\PendingImageTaskException;
@@ -1763,9 +1764,23 @@ class AssetController extends BaseController
     {
         $region = $this->normalizeSeriesRegion($region);
         $visualStyle = $this->normalizeVisualStyle($visualStyle);
-        $visualStyleVariant = $this->normalizeVisualStyleVariant($visualStyle, $visualStyleVariant);
-        $prompt = $this->sanitizeSubjectPromptForVisualStyle(trim($prompt), $visualStyle, $visualStyleVariant);
-        $styleRule = $this->assetVisualStylePromptRule($visualStyle, $visualStyleVariant);
+        $preset = null;
+        if ($asset instanceof Asset) {
+            $series = $asset->series;
+            if (!$series instanceof Series) {
+                $seriesId = (int) $asset->getAttr('series_id');
+                $series = $seriesId > 0 ? Series::find($seriesId) : null;
+            }
+            $preset = SeriesStylePrompt::presetForSeries($series instanceof Series ? $series : null);
+        }
+        $styleCode = (string) ($preset['code'] ?? '');
+        $prompt = $this->sanitizeSubjectPromptForVisualStyle($prompt, $visualStyle, $styleCode === 'unreal' ? 'unreal' : '');
+        $styleKind = match ($assetType) {
+            'scene' => 'scene',
+            'prop' => 'prop',
+            default => 'character',
+        };
+        $styleRule = SeriesStylePrompt::compose($preset, $visualStyle, $styleKind);
         if ($mainImageUrl !== '') {
             $styleRule = '最高优先级视觉规则：以随请求上传的参考图画风为准，参考图的风格优先级高于剧本默认视觉风格、资产类型默认风格和其他风格描述。如果参考图是动漫/卡通/手绘/3D/写实中的任意风格，输出必须匹配参考图的画风、线条、材质、色彩、光影、渲染方式和美术完成度。若参考图是动漫或卡通，禁止生成真人、真实摄影、live-action 或写实人物。Highest priority style rule: match the uploaded reference image style above all other style instructions; if the reference is anime/cartoon, do not generate live-action or photorealistic results.';
         }
@@ -2851,7 +2866,7 @@ class AssetController extends BaseController
         $visualStyle = $this->normalizeVisualStyle($visualStyle);
         $anti = match ($visualStyle) {
             'anime' => '画风最高优先级：必须是动漫/二次元手绘或赛璐璐质感；严禁写实摄影、真人实拍、照片级皮肤与镜头景深；严禁纯3D CGI/游戏引擎质感。',
-            '3d' => '画风最高优先级：必须是3D渲染或风格化三维质感；严禁2D动漫平涂、赛璐璐与手绘插画；严禁手机实拍照片质感，除非细分风格明确要求虚幻写实。',
+            '3d' => '画风最高优先级：必须是3D渲染或风格化三维质感；严禁2D动漫平涂、赛璐璐与手绘插画；严禁手机实拍照片质感，除非作品风格明确要求虚幻写实。',
             default => '画风最高优先级：必须是真人实拍/写实摄影质感；严禁动漫、二次元、卡通、赛璐璐、手绘插画、漫画平涂或动画上色。',
         };
 
@@ -2932,41 +2947,6 @@ class AssetController extends BaseController
         ];
 
         return in_array($variant, $allowed[$style] ?? [], true) ? $variant : '';
-    }
-
-    private function assetVisualStylePromptRule(string $style, string $variant = ''): string
-    {
-        $style = $this->normalizeVisualStyle($style);
-        $variant = $this->normalizeVisualStyleVariant($style, $variant);
-        $base = match ($style) {
-            'anime' => '动漫二次元风格，手绘质感，色彩鲜艳，线条清晰；禁止写实摄影、真人实拍、照片级皮肤与真实镜头景深；禁止纯3D CGI。Anime style, 2D hand-drawn look, vibrant colors, clean lines; no photorealistic live-action; no pure 3D CGI.',
-            '3d' => '3D渲染风格，精细建模，电影级光影，高对比度；禁止2D动漫平涂与赛璐璐；非手机实拍照片。3D render style, high detail modeling, cinematic lighting, polished 3D look; no 2D anime cel-shading; not a phone camera photo.',
-            default => '电影感真实质感，真人拍摄效果，写实画风；禁止动漫、二次元、卡通、赛璐璐、手绘插画与漫画平涂。Cinematic realistic style, live-action look, highly detailed textures; no anime, cartoon, cel-shading, or hand-drawn illustration.',
-        };
-        $variantRule = match ($variant) {
-            'cinematic' => '细分风格：电影感写实，使用影视剧剧照质感、自然表演、真实镜头景深和克制调色。',
-            'short_drama' => '细分风格：短剧写实，强调人物关系、清晰表演、现实生活场景和适合短剧平台的直接叙事。',
-            'documentary' => '细分风格：纪实摄影，自然光、生活流、轻修饰、现场感强。',
-            'commercial' => '细分风格：商业广告片，画面干净高级，布光精致，材质和人物状态更 polished。',
-            'noir' => '细分风格：暗调悬疑，低调光、高反差、阴影层次、紧张神秘氛围。',
-            'showa_anime' => '细分风格：昭和年代赛璐璐动画感，复古线条、胶片颗粒、低饱和怀旧色彩、手绘背景。',
-            'classic_american_cartoon' => '细分风格：1940-1950 年代经典美式影院手绘卡通感，赛璐璐上色、清晰墨线、夸张肢体表演、弹性形变、复古胶片颗粒、温暖手绘背景和高对比舞台式灯光；借鉴黄金时代美国动画语言，但不要复刻任何既有角色、标志或受版权保护形象。',
-            'heisei_classic' => '细分风格：平成经典电视动画感，清晰赛璐璐线稿、90s-00s 配色、稳定角色设定和干净分层上色。',
-            'moe' => '细分风格：萌系二次元，圆润脸型、大眼睛、柔软线条、明亮可爱配色、表情细腻。',
-            'kyoto_animation' => '细分风格：清爽日系青春动画感，柔和高饱和色彩、干净线条、细腻表情、日常生活光影。',
-            'shinkai' => '细分风格：高透明度天空、强烈逆光、细腻城市背景、空气感光晕和电影级日系动画色彩。',
-            'modern_mobile_game' => '细分风格：现代手游二次元立绘质感，精致角色设计、高饱和光效、干净数字绘和细密材质层次。',
-            'guoman' => '细分风格：现代国漫风，东方审美、细腻角色造型、数字动画渲染、层次丰富背景。',
-            'cel_shaded' => '细分风格：赛璐璐动画风，明确色块、硬边阴影、线稿清晰、干净平涂。',
-            'animated_feature' => '细分风格：动画电影3D，友好角色比例、柔和材质、电影动画灯光和精致表情。',
-            'unreal' => '细分风格：虚幻引擎写实，高精模型、真实材质、体积光、游戏过场级渲染。',
-            'stylized_3d' => '细分风格：风格化3D，夸张造型、简化材质、清晰轮廓、鲜明色彩。',
-            'clay' => '细分风格：黏土动画，手工塑形材质、轻微指纹纹理、定格动画质感、柔和棚拍光。',
-            'low_poly' => '细分风格：低多边形，几何切面、简洁形体、清晰色块和轻量游戏美术感。',
-            default => '',
-        };
-
-        return $variantRule !== '' ? $base . ' ' . $variantRule : $base;
     }
 
     private function normalizeSeriesRegion(string $region): string

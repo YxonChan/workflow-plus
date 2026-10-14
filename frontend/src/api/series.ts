@@ -24,8 +24,8 @@ export interface VideoPromptPreview {
   workflow_node_id: string
   label: string
   video_options: Record<string, any>
-  video_style_prompt?: string
-  video_style_source?: 'system_default' | 'custom' | string
+  style_name?: string
+  style_prompt?: string
   shot_count: number
   shots: VideoPromptPreviewShot[]
   generated_at: string

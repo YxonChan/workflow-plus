@@ -816,6 +816,10 @@ SQL);
         if (!self::columnExists('series', 'visual_style_variant')) {
             Db::execute("ALTER TABLE `series` ADD COLUMN `visual_style_variant` varchar(64) NOT NULL DEFAULT '' COMMENT '二级视觉风格' AFTER `visual_style`");
         }
+        if (!self::columnExists('series', 'style_preset_id')) {
+            Db::execute("ALTER TABLE `series` ADD COLUMN `style_preset_id` int unsigned DEFAULT NULL COMMENT 'style_presets.id' AFTER `visual_style_variant`");
+            self::addIndexIfMissing('series', 'idx_series_style_preset', ['style_preset_id']);
+        }
     }
 
     private static function tenantTables(): array

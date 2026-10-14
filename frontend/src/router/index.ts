@@ -70,6 +70,12 @@ const router = createRouter({
       meta: { titleKey: '资产管理', productionOnly: true },
     },
     {
+      path: '/styles',
+      name: 'styles',
+      component: () => import('@/views/StylePresetView.vue'),
+      meta: { titleKey: '风格化', productionOnly: true },
+    },
+    {
       path: '/my-credits',
       name: 'myCredits',
       component: () => import('@/views/MyCreditsView.vue'),

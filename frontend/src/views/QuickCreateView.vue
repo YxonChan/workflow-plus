@@ -28,6 +28,7 @@ import {
   videoResolutionOptions as resolveVideoResolutionOptions,
 } from '@/utils/videoModelOptions'
 import { useAuthStore } from '@/stores/auth'
+import StylePresetSelect from '@/components/series/StylePresetSelect.vue'
 
 const HISTORY_PAGE_SIZE = 10
 
@@ -72,6 +73,7 @@ let referenceHoverHideTimer: ReturnType<typeof setTimeout> | null = null
 
 // ── 输入状态 ─────────────────────────────────────────────────────────────────
 const mode = ref<QuickCreateMode>('video')
+const stylePresetId = ref<number | null>(null)
 const promptText = ref('')
 const inputEl = ref<HTMLElement | null>(null)
 
@@ -1708,6 +1710,8 @@ function refillQuickCreateInput(message: QuickCreateMessage) {
     .filter((verification) => verification.status === 'queued' || verification.status === 'running')
     .forEach((verification) => subscribeFaceVerification(verification.id))
 
+  const presetId = Number(options.style_preset_id || 0)
+  stylePresetId.value = presetId > 0 ? presetId : null
   aspectRatio.value = options.aspect_ratio || 'adaptive'
   count.value = Number(options.count) > 0 ? Number(options.count) : 1
   if (message.mode === 'video') {
@@ -1783,6 +1787,7 @@ async function send() {
         count: count.value,
         ...(mode.value === 'image' ? { quality: imageQuality.value } : {}),
         ...(mode.value === 'video' ? { duration: duration.value, generate_audio: generateAudio.value } : {}),
+        ...(stylePresetId.value ? { style_preset_id: stylePresetId.value } : {}),
       },
     })
     messages.value.push(res.message)
@@ -1816,6 +1821,10 @@ function refUrlsOf(message: QuickCreateMessage): string[] {
 
 function refPreviewIndex(message: QuickCreateMessage, index: number): number {
   return message.asset_refs.slice(0, index).filter((r) => r.image_url).length
+}
+
+function styleNameOf(message: QuickCreateMessage): string {
+  return String(message.options?.style_name || '').trim()
 }
 
 function statusLabel(message: QuickCreateMessage): string {
@@ -2084,6 +2093,7 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
                 <span class="qc-ref-thumb-name">@{{ ref.name }}</span>
               </div>
             </div>
+            <p v-if="styleNameOf(message)" class="qc-style-label">{{ t('风格：{name}', { name: styleNameOf(message) }) }}</p>
             <div
               class="qc-prompt"
               :class="{ 'is-collapsed': isLongPrompt(message) && !expandedPrompts.has(message.id) }"
@@ -2539,6 +2549,15 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
           ? t('已选择 {count}/6 个素材；图片不超过 100MB，参考视频最多 3 段、单段不超过 50MB、总时长不超过 15 秒。', { count: pendingRefs.length })
           : t('已选择 {count}/6 张；支持拖入或选择多张图片，单张不超过 100MB。格式：JPG、JPEG、PNG、GIF、WebP。', { count: pendingRefs.length }) }}
       </p>
+
+      <div class="qc-style-row">
+        <StylePresetSelect
+          v-model="stylePresetId"
+          :restrict-visual-style="false"
+          size="small"
+          inline-meta
+        />
+      </div>
 
       <div class="qc-toolbar">
         <!-- 模式切换 -->
@@ -3860,6 +3879,18 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
 }
 
 // ── 工具条 ───────────────────────────────────────────────────────────────────
+.qc-style-row {
+  margin-top: 2px;
+}
+
+.qc-style-label {
+  margin: 0 0 8px;
+  color: var(--accent-cyan);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .qc-toolbar {
   display: flex;
   align-items: center;

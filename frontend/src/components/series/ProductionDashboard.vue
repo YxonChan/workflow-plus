@@ -30,7 +30,7 @@ import StatusBadge from '@/components/ui/StatusBadge.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import AssetLinkedText from '@/components/series/AssetLinkedText.vue'
 import { copyTextToClipboard } from '@/utils/clipboard'
-import { VISUAL_STYLE_OPTIONS, visualStyleVariantOptions, type VisualStyle } from '@/utils/visualStyle'
+import { VISUAL_STYLE_OPTIONS, type VisualStyle } from '@/utils/visualStyle'
 
 type StageNode = NonNullable<Episode['workflow_state']>['nodes'][number]
 type AssetKind = 'character' | 'scene' | 'prop'
@@ -190,11 +190,9 @@ const seriesRegionLabel = computed(() => {
 const seriesStyleLabel = computed(() => {
   const style = String(props.series?.visual_style || 'realistic') as VisualStyle
   const styleLabel = VISUAL_STYLE_OPTIONS.find((item) => item.value === style)?.label || style
-  const variant = String(props.series?.visual_style_variant || '').trim()
-  const variantLabel = variant
-    ? (visualStyleVariantOptions(style).find((item) => item.value === variant)?.label || variant)
-    : ''
-  return variantLabel ? `${t(styleLabel)} · ${t(variantLabel)}` : t(styleLabel)
+  const presetName = String(props.series?.style_preset?.name || '').trim()
+  const presetLabel = presetName || t('未设置风格')
+  return `${t(styleLabel)} · ${presetLabel}`
 })
 
 /** 已有剧集时视为剧本解析完成，隐藏「运行剧本解析」避免重复点击。 */

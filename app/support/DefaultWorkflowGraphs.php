@@ -25,7 +25,7 @@ class DefaultWorkflowGraphs
                 ['modelId' => null, 'prompt' => self::shotSplitPrompt(), 'executionMode' => 'ai', 'maxTokens' => 16384]),
             self::node($id('video-gen'), 840, '视频生成', 'VideoCamera', 'video', '基于分镜描述和资产参考生成视频片段；时长跟随分镜（如 8s/15s）',
                 ['modelId' => null, 'prompt' => '', 'duration' => 0, 'aspect_ratio' => '16:9', 'resolution' => '480p',
-                    'chainShots' => false, 'generate_audio' => true, 'enable_web_search' => false, 'video_style_prompt' => self::videoStylePrompt()]),
+                    'chainShots' => false, 'generate_audio' => true, 'enable_web_search' => false]),
             self::node($id('export-video'), 1120, '输出视频', 'Download', 'output', '渲染最终 MP4',
                 ['prompt' => '', 'format' => 'mp4', 'resolution' => '1920x1080']),
         ];
@@ -46,7 +46,7 @@ class DefaultWorkflowGraphs
                 ['modelId' => null, 'prompt' => self::promoShotSplitPrompt(), 'executionMode' => 'ai', 'maxTokens' => 8192]),
             self::node($id('video-gen'), 840, '视频生成', 'VideoCamera', 'video', '基于宣传片分镜和品牌资产生成 1-4 段视频',
                 ['modelId' => null, 'prompt' => '', 'duration' => 15, 'aspect_ratio' => '16:9', 'resolution' => '480p',
-                    'chainShots' => false, 'generate_audio' => true, 'enable_web_search' => false, 'video_style_prompt' => self::videoStylePrompt()]),
+                    'chainShots' => false, 'generate_audio' => true, 'enable_web_search' => false]),
             self::node($id('export-video'), 1120, '输出视频', 'Download', 'output', '合并并导出约 15-60 秒 MP4',
                 ['prompt' => '', 'format' => 'mp4', 'resolution' => '1920x1080']),
         ];
@@ -177,35 +177,6 @@ Output JSON:
     }
   ]
 }
-PROMPT;
-    }
-
-    public static function videoStylePrompt(): string
-    {
-        return <<<'PROMPT'
-Style: 8K IMAX. Photorealistic — no 3D render, no game engine, no game-cutscene aesthetic.
-
-Cinematography: Anamorphic large-format cinematic look — Panavision C-Series widescreen, 2x squeeze, oval bokeh, slight lens breathing, shallow depth of field when appropriate, strong subject isolation, rich cinematic latitude, 70-80s epic Hollywood visual language.
-
-Lighting: Motivated cinematic lighting based on the script and location. Use natural light, practical light, window light, street light, firelight, neon, candlelight, or artificial light only when it logically belongs to the scene. Lighting must feel physically present in the environment, not like flat studio lighting.
-
-Color: Follow the story world and scene mood. Use a clear 60:30:10 color structure — dominant color / secondary color / accent color. Do not introduce random colors that break the established visual tone.
-
-Camera: Physical cine lens look. 180° shutter motion blur. Natural handheld movement, tripod stability, dolly movement, crane movement, or locked-off framing should be chosen according to the emotional rhythm of the scene.
-
-Skin and Texture: Real human skin with pore-level realism — vellus hair, fine lines, asymmetric details, natural blemishes, subtle capillary flush, sweat, tears, dust, dirt, cold breath, or environmental effects only when appropriate to the scene.
-
-Acting: Naturalistic cinematic performance — micro-pauses before reactions, precise eye-line, restrained facial changes, wet living eyes with catch-lights, visible breathing, believable body tension, and emotionally motivated movement.
-
-Physics: Gravity and inertia respected. Bodies, clothing, props, weapons, vehicles, water, fire, smoke, dust, snow, rain, glass, metal, fabric, and debris must have real weight, contact, resistance, and believable physical behavior.
-
-Continuity: Maintain stable character identity, costume continuity, prop continuity, scene geography, screen direction, lighting direction, and emotional continuity across all shots. No identity drift, no random costume changes, no inconsistent props.
-
-Technical: 24fps cinematic motion. 8K detail. Sharp subject detail where focus is intended. No jitter, no AI smudge, no compression artifacts, no unstable faces, no warped hands.
-
-Text/Subtitles: Absolutely no subtitles, no burned-in captions, no on-screen dialogue text, no title cards, no lyrics, no watermark text, no UI text. Keep the frame clean of any readable text overlays.
-
-Audio: Environmental SFX only unless dialogue is explicitly present in the script. Use location-appropriate sound such as footsteps, breath, cloth movement, wind, room tone, traffic, machinery, water, fire, crowd noise, distant impacts, or object handling. No music unless the script explicitly requires music.
 PROMPT;
     }
 
