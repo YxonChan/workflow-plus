@@ -38,9 +38,18 @@ class QuickCreateWorker extends Command
         $maxConcurrency = max(1, (int) $input->getOption('max-concurrency'));
         $staleMinutes = max(10, (int) $input->getOption('stale-minutes'));
         $pendingTimeoutMinutes = max(5, (int) $input->getOption('pending-timeout-minutes'));
+        $lastBillingCheck = 0;
 
         do {
             try {
+                if (time() - $lastBillingCheck >= 60) {
+                    $lastBillingCheck = time();
+                    try {
+                        \app\support\ToapisImageBilling::reconcile();
+                    } catch (\Throwable $error) {
+                        Log::warning('[QuickCreateWorker] billing reconciliation failed: ' . $error->getMessage());
+                    }
+                }
                 $this->recoverStaleMessages($staleMinutes);
                 $this->expirePendingMessages($pendingTimeoutMinutes);
 

@@ -31,6 +31,8 @@ export interface FaceVerification {
 }
 
 export interface QuickCreateOptions {
+  size?: string
+  background?: string
   aspect_ratio?: string
   resolution?: string
   quality?: 'low' | 'medium' | 'high' | string
@@ -82,6 +84,11 @@ export interface QuickCreateEditPayload {
 }
 
 const BASE = '/api/quick-create'
+
+export interface QuickCreateQuote { credits: number; estimated: boolean; count: number }
+export function quoteQuickCreateImage(data: { model_config_id: number; prompt: string; reference_count: number; options: QuickCreateOptions }): Promise<QuickCreateQuote> {
+  return request({ method: 'POST', url: `${BASE}/quote`, data, silent: true })
+}
 
 export interface QuickCreateListParams {
   limit?: number

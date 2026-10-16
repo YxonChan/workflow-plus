@@ -7,18 +7,15 @@ namespace app\support;
 use app\model\Asset;
 use app\model\AssetImage;
 use app\model\ModelConfig;
-use think\facade\Db;
-use think\facade\Log;
 
 /**
- * ToAPIs Seedance 2 虚拟人像：一个人物一个 group（桶），一套造型一个 pa_。
+ * ToAPIs media compatibility and review-on-generation support.
  */
 class ToapisPrivateAvatarService
 {
     public const INGEST_JOB_MARKER = '[look_toapis_ingest]';
     public const LEGACY_PENCIL_JOB_MARKER = '[look_video_pencil]';
     public const DEFAULT_BASE = 'https://toapis.cn';
-    public const PRIVATE_AVATAR_PREFIX = '/v1/videos/doubao-seedance-2-0/private-avatar';
 
     public static function isIngestJob(string $description): bool
     {
@@ -38,6 +35,25 @@ class ToapisPrivateAvatarService
     public static function isAssetUri(string $url): bool
     {
         return str_starts_with(strtolower(trim($url)), 'asset://');
+    }
+
+    public static function applyVideoReview(array $payload, string $endpoint): array
+    {
+        if (!self::isToapisEndpoint($endpoint)) return $payload;
+        $hasMedia = false;
+        foreach (['image_with_roles', 'video_with_roles', 'audio_with_roles', 'reference_images', 'image_urls', 'images', 'image', 'video_list', 'video_urls', 'audio_urls', 'reference_videos', 'reference_audios'] as $field) {
+            foreach ((array) ($payload[$field] ?? []) as $media) {
+                $url = trim((string) (is_array($media) ? ($media['url'] ?? '') : $media));
+                if ($url === '') continue;
+                if (self::isAssetUri($url)) {
+                    throw new \InvalidArgumentException('视频审核需要原始素材 URL，请重新选择参考图');
+                }
+                $hasMedia = true;
+            }
+        }
+        if ($hasMedia) $payload['private_asset_review'] = true;
+        unset($payload['private_assets']);
+        return $payload;
     }
 
     public static function isLookAvatarActive(string $status, string $assetUrl): bool
@@ -65,11 +81,11 @@ class ToapisPrivateAvatarService
 
     public static function isToapisEndpoint(string $endpoint): bool
     {
-        $endpoint = strtolower($endpoint);
-
-        return str_contains($endpoint, 'toapis.cn')
-            || str_contains($endpoint, 'toapis.com')
-            || str_contains($endpoint, 'toapis.xyz');
+        $host = strtolower((string) parse_url($endpoint, PHP_URL_HOST));
+        foreach (['toapis.cn', 'toapis.com', 'toapis.xyz'] as $domain) {
+            if ($host === $domain || str_ends_with($host, '.' . $domain)) return true;
+        }
+        return false;
     }
 
     public static function isLegacyToapisHost(string $value): bool
@@ -93,7 +109,8 @@ class ToapisPrivateAvatarService
 
     public static function needsLookToapisAvatar(string $visualStyle): bool
     {
-        return strtolower(trim($visualStyle)) === 'realistic';
+        // Review now belongs to the video task, never a separate asset-creation task.
+        return false;
     }
 
     /**
@@ -171,49 +188,6 @@ class ToapisPrivateAvatarService
         return self::DEFAULT_BASE;
     }
 
-    /**
-     * @return array{api_key:string,base:string,endpoint:string}
-     */
-    public function credentials(int $userId = 0): array
-    {
-        $model = $userId > 0 ? ModelConfigResolver::resolve('video', $userId) : null;
-        $endpoint = $model instanceof ModelConfig ? trim((string) $model->getAttr('endpoint')) : '';
-        $apiKey = $model instanceof ModelConfig ? trim((string) $model->getAttr('api_key')) : '';
-        if ($model instanceof ModelConfig && !self::isToapisEndpoint($endpoint)) {
-            $apiKey = '';
-            $endpoint = '';
-        }
-        if ($apiKey === '') {
-            $apiKey = trim((string) env('TOAPIS_API_KEY', ''));
-        }
-        if ($apiKey === '' && $userId > 0) {
-            $fallback = ModelConfig::where('type', 'video')
-                ->where('enabled', 1)
-                ->where(function ($query): void {
-                    $query->whereLike('endpoint', '%toapis.cn%')
-                        ->whereOr('endpoint', 'like', '%toapis.xyz%')
-                        ->whereOr('endpoint', 'like', '%toapis.com%');
-                })
-                ->order(['is_default' => 'desc', 'id' => 'asc'])
-                ->find();
-            if ($fallback instanceof ModelConfig) {
-                $apiKey = trim((string) $fallback->getAttr('api_key'));
-                $endpoint = trim((string) $fallback->getAttr('endpoint'));
-            }
-        }
-        if ($apiKey === '') {
-            throw new \RuntimeException('未配置视频通道密钥，无法完成人物造型人像入库');
-        }
-
-        $resolvedEndpoint = self::rewriteLegacyEndpoint($endpoint);
-        $base = self::normalizeBaseUrl($resolvedEndpoint);
-
-        return [
-            'api_key' => $apiKey,
-            'base' => $base,
-            'endpoint' => $resolvedEndpoint !== '' ? $resolvedEndpoint : ($base . '/v1/videos/generations'),
-        ];
-    }
 
     public function clearLookBinding(AssetImage $image): void
     {
@@ -234,55 +208,7 @@ class ToapisPrivateAvatarService
     }
 
     /**
-     * 确保该人物有且仅有一个 group；多套造型复用。
-     */
-    public function ensureCharacterGroup(Asset $asset, int $userId): string
-    {
-        $existing = trim((string) ($asset->getAttr('toapis_group_id') ?? ''));
-        if ($existing !== '') {
-            return $existing;
-        }
-
-        $assetId = (int) $asset->getAttr('id');
-        $name = trim((string) $asset->getAttr('name'));
-        if ($name === '') {
-            $name = 'character-' . $assetId;
-        }
-
-        $creds = $this->credentials($userId);
-        $groupId = '';
-        Db::transaction(function () use ($assetId, $name, $creds, &$groupId): void {
-            $locked = Asset::where('id', $assetId)->lock(true)->find();
-            if (!$locked instanceof Asset) {
-                throw new \RuntimeException('人物资产不存在，无法创建人像分组');
-            }
-            $existing = trim((string) ($locked->getAttr('toapis_group_id') ?? ''));
-            if ($existing !== '') {
-                $groupId = $existing;
-                return;
-            }
-
-            $response = $this->request('POST', $creds['base'] . self::PRIVATE_AVATAR_PREFIX . '/groups', $creds['api_key'], [
-                'name' => mb_substr($name, 0, 80),
-                'description' => 'virtual character looks bucket',
-            ]);
-            $groupId = trim((string) ($response['data']['group_id'] ?? $response['group_id'] ?? ''));
-            if ($groupId === '') {
-                throw new \RuntimeException('人像分组创建失败：未返回 group_id');
-            }
-            $locked->save(['toapis_group_id' => $groupId]);
-        });
-
-        if ($groupId === '') {
-            throw new \RuntimeException('人像分组创建失败');
-        }
-        $asset->setAttr('toapis_group_id', $groupId);
-
-        return $groupId;
-    }
-
-    /**
-     * 把造型展示图上传到该人物 group，轮询到 active 后写回 pa_。
+     * Settle legacy queued ingest jobs without claiming the media passed review.
      *
      * @return array{group_id:string,asset_id:string,asset_url:string,status:string}
      */
@@ -290,114 +216,16 @@ class ToapisPrivateAvatarService
     {
         $displayUrl = trim($displayUrl);
         if ($displayUrl === '') {
-            throw new \RuntimeException('造型展示图为空，无法人像入库');
+            throw new \RuntimeException('参考图为空，无法提交素材');
         }
 
-        $image->save([
-            'toapis_asset_id' => '',
-            'toapis_asset_url' => '',
-            'toapis_status' => 'processing',
-        ]);
-
-        try {
-            $groupId = $this->ensureCharacterGroup($asset, $userId);
-            $creds = $this->credentials($userId);
-            $sourceUrl = $this->resolvePublicSourceUrl($displayUrl, $creds);
-            $variant = trim((string) ($image->getAttr('variant_name') ?? ''));
-            $lookName = $variant !== '' ? $variant : ('look-' . (int) $image->getAttr('id'));
-
-            $uploaded = $this->request('POST', $creds['base'] . self::PRIVATE_AVATAR_PREFIX . '/assets', $creds['api_key'], [
-                'group_id' => $groupId,
-                'asset_type' => 'image',
-                'source_url' => $sourceUrl,
-                'name' => mb_substr($lookName, 0, 80),
-                'description' => 'character look',
-            ]);
-            $assetId = trim((string) ($uploaded['data']['asset_id'] ?? $uploaded['asset_id'] ?? ''));
-            $assetUrl = trim((string) ($uploaded['data']['asset_url'] ?? $uploaded['asset_url'] ?? ''));
-            $status = strtolower(trim((string) ($uploaded['data']['status'] ?? $uploaded['status'] ?? 'processing')));
-            if ($assetId === '') {
-                throw new \RuntimeException('人像上传失败：未返回 asset_id');
-            }
-            if ($assetUrl === '') {
-                $assetUrl = 'asset://' . $assetId;
-            }
-            $image->save([
-                'toapis_asset_id' => $assetId,
-                'toapis_asset_url' => $assetUrl,
-                'toapis_status' => $status === 'active' ? 'active' : 'processing',
-            ]);
-
-            $polled = $this->pollAssetUntilSettled($creds, $assetId, $assetUrl, $status);
-            $finalStatus = $polled['status'];
-            $finalUrl = $polled['asset_url'];
-            if ($finalStatus !== 'active' || !self::isAssetUri($finalUrl)) {
-                $image->save([
-                    'toapis_asset_id' => $assetId,
-                    'toapis_asset_url' => $finalUrl,
-                    'toapis_status' => 'failed',
-                ]);
-                throw new \RuntimeException('人像入库未完成，状态：' . $finalStatus);
-            }
-            $image->save([
-                'toapis_asset_id' => $assetId,
-                'toapis_asset_url' => $finalUrl,
-                'toapis_status' => 'active',
-            ]);
-
-            return [
-                'group_id' => $groupId,
-                'asset_id' => $assetId,
-                'asset_url' => $finalUrl,
-                'status' => 'active',
-            ];
-        } catch (\Throwable $e) {
-            $current = strtolower(trim((string) ($image->getAttr('toapis_status') ?? '')));
-            if ($current !== 'active') {
-                $image->save(['toapis_status' => 'failed']);
-            }
-            Log::warning('toapis private-avatar ingest failed: ' . $e->getMessage(), [
-                'asset_id' => (int) $asset->getAttr('id'),
-                'asset_image_id' => (int) $image->getAttr('id'),
-            ]);
-            throw $e;
-        }
+        $this->clearLookBinding($image);
+        $image->save(['toapis_status' => 'on_generate']);
+        return ['group_id' => '', 'asset_id' => '', 'asset_url' => $displayUrl, 'status' => 'on_generate'];
     }
 
     /**
-     * @param array{api_key:string,base:string,endpoint:string} $creds
-     * @return array{status:string,asset_url:string}
-     */
-    private function pollAssetUntilSettled(array $creds, string $assetId, string $assetUrl, string $status): array
-    {
-        $deadline = time() + 90;
-        $lastStatus = $status;
-        $lastUrl = $assetUrl;
-        while (time() <= $deadline) {
-            if (in_array($lastStatus, ['active', 'failed', 'error', 'rejected'], true)) {
-                break;
-            }
-            sleep(3);
-            $query = $this->request(
-                'GET',
-                $creds['base'] . self::PRIVATE_AVATAR_PREFIX . '/assets/' . rawurlencode($assetId),
-                $creds['api_key']
-            );
-            $lastStatus = strtolower(trim((string) ($query['data']['status'] ?? $query['status'] ?? $lastStatus)));
-            $polledUrl = trim((string) ($query['data']['asset_url'] ?? $query['asset_url'] ?? ''));
-            if ($polledUrl !== '') {
-                $lastUrl = $polledUrl;
-            }
-        }
-        if ($lastUrl === '') {
-            $lastUrl = 'asset://' . $assetId;
-        }
-
-        return ['status' => $lastStatus, 'asset_url' => $lastUrl];
-    }
-
-    /**
-     * 解析 ToAPIs private-avatar 可用的 source_url。
+     * 将本站或私网图片转成 ToAPIs 可访问的 URL。
      * 优先本站本地文件直传；本站公网域可直传 URL；Supabase 等外链先中转上传，避免对方跨海拉图超时。
      *
      * @param array{api_key:string,base:string,endpoint:string} $creds
@@ -406,7 +234,7 @@ class ToapisPrivateAvatarService
     {
         $url = trim($url);
         if ($url === '') {
-            throw new \RuntimeException('造型展示图为空，无法人像入库');
+            throw new \RuntimeException('参考图为空，无法提交素材');
         }
 
         $localUploaded = $this->uploadLocalImage($url, $creds);
@@ -422,7 +250,7 @@ class ToapisPrivateAvatarService
             if ($relayed !== '') {
                 return $relayed;
             }
-            throw new \RuntimeException('外链图片无法中转到人像服务，请改用本站上传图后重试');
+            throw new \RuntimeException('参考图无法中转到素材服务，请重新上传后重试');
         }
 
         $path = (string) (parse_url($url, PHP_URL_PATH) ?: $url);
@@ -433,7 +261,17 @@ class ToapisPrivateAvatarService
             }
         }
 
-        throw new \RuntimeException('造型图没有公网地址，无法人像入库。请配置 MEDIA_PUBLIC_BASE_URL');
+        throw new \RuntimeException('参考图没有可访问的地址，请配置 MEDIA_PUBLIC_BASE_URL 或重新上传');
+    }
+
+    public function imageSourceUrl(string $url, string $endpoint, string $apiKey): string
+    {
+        $public = MediaStorage::toPublicHttpUrl($url);
+        $host = (string) parse_url($public, PHP_URL_HOST);
+        $isPrivate = $host === '' || strtolower($host) === 'localhost'
+            || (filter_var($host, FILTER_VALIDATE_IP) && !filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE));
+        if (!$isPrivate) return $public;
+        return $this->resolvePublicSourceUrl($url, ['base' => self::normalizeBaseUrl($endpoint), 'api_key' => $apiKey, 'endpoint' => $endpoint]);
     }
 
     /**
@@ -623,53 +461,4 @@ class ToapisPrivateAvatarService
         return '';
     }
 
-    /**
-     * @param array<string, mixed>|null $payload
-     * @return array<string, mixed>
-     */
-    private function request(string $method, string $url, string $apiKey, ?array $payload = null): array
-    {
-        $headers = [
-            'Authorization: Bearer ' . $apiKey,
-            'Accept: application/json',
-        ];
-        $ch = curl_init($url);
-        if ($ch === false) {
-            throw new \RuntimeException('人像接口请求失败：curl_init');
-        }
-        $opts = [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_TIMEOUT => 45,
-            CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_CUSTOMREQUEST => strtoupper($method),
-        ];
-        if ($payload !== null) {
-            $headers[] = 'Content-Type: application/json';
-            $opts[CURLOPT_POSTFIELDS] = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        }
-        $opts[CURLOPT_HTTPHEADER] = $headers;
-        curl_setopt_array($ch, $opts);
-        $body = curl_exec($ch);
-        $errno = curl_errno($ch);
-        $error = (string) curl_error($ch);
-        $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        if ($errno !== 0) {
-            throw new \RuntimeException('人像接口网络错误：' . $error);
-        }
-        $raw = is_string($body) ? $body : '';
-        $json = json_decode($raw, true);
-        if ($http < 200 || $http >= 300) {
-            $message = is_array($json)
-                ? (string) ($json['error']['message'] ?? $json['message'] ?? $json['msg'] ?? '')
-                : '';
-            throw new \RuntimeException('人像接口 HTTP ' . $http . ($message !== '' ? '：' . $message : ''));
-        }
-        if (!is_array($json)) {
-            throw new \RuntimeException('人像接口返回不是 JSON');
-        }
-
-        return $json;
-    }
 }

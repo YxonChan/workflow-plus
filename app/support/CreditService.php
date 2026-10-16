@@ -91,6 +91,17 @@ SQL);
     public static function pricingCatalog(): array
     {
         $pricing = self::pricing();
+        $image = $pricing['image'] ?? [];
+        foreach (array_keys($image['models'] ?? []) as $modelId) {
+            $rule = $image['models'][$modelId];
+            if (isset($rule['by_resolution_usd'])) {
+                $image['models'][$modelId]['by_resolution'] = array_map([self::class, 'usdToCredits'], $rule['by_resolution_usd']);
+            }
+            if (isset($rule['token_usd_per_million'])) {
+                $image['models'][$modelId]['token_credits_per_1k'] = array_map(
+                    static fn ($rate): float => self::usdToCredits((float) $rate / 1000), $rule['token_usd_per_million']);
+            }
+        }
 
         return [
             'enabled' => (bool) ($pricing['enabled'] ?? true),
@@ -101,7 +112,7 @@ SQL);
             'markup' => (float) ($pricing['markup'] ?? 1.25),
             'notes' => is_array($pricing['notes'] ?? null) ? array_values($pricing['notes']) : [],
             'text' => $pricing['text'] ?? [],
-            'image' => $pricing['image'] ?? [],
+            'image' => $image,
             'video' => $pricing['video'] ?? [],
             'editable' => false,
         ];
@@ -132,9 +143,24 @@ SQL);
         return $credits;
     }
 
-    public static function quoteImage(string $quality = '', string $modelId = '', int $referenceImageCount = 0): float
+    public static function quoteImage(string $quality = '', string $modelId = '', int $referenceImageCount = 0, array $options = []): float
     {
         $rule = self::imageRule($modelId);
+        if (ImageGenerationOptions::isToapis25($modelId)) {
+            $resolved = ImageGenerationOptions::resolveToapis25($options + ['quality' => $quality ?: 'high'], $modelId);
+            if (!ImageGenerationOptions::isOfficial25($modelId)) {
+                return self::usdToCredits((float) $rule['by_resolution_usd'][$resolved['resolution']]);
+            }
+            // A preflight estimate only; final charges always use settled provider billing.
+            [$width, $height] = array_map('intval', explode('x', $resolved['size']));
+            $outputTokens = ['auto' => 4000, 'low' => 200, 'medium' => 1000, 'high' => 4000, 'xhigh' => 8000, 'max' => 16000];
+            $output = $outputTokens[$resolved['quality']] * ($width * $height / 1048576);
+            $input = max(1, (int) ($options['estimated_text_tokens'] ?? 500));
+            $rates = $rule['token_usd_per_million'];
+            return self::usdToCredits(($input * $rates['text_input']
+                + max(0, min(9, $referenceImageCount)) * 1000 * $rates['image_input']
+                + $output * $rates['image_output']) / 1000000);
+        }
         $quality = self::normalizeQuality($quality !== '' ? $quality : (string) ($rule['default_quality'] ?? ImageGenerationOptions::defaultQuality()));
         $byQuality = is_array($rule['by_quality'] ?? null) ? $rule['by_quality'] : [];
         if (isset($rule['base_price_cny'])) {
@@ -202,9 +228,27 @@ SQL);
         );
     }
 
-    public static function assertImageAffordable(int $userId, string $quality = '', string $modelId = '', int $referenceImageCount = 0): void
+    public static function assertImageAffordable(int $userId, string $quality = '', string $modelId = '', int $referenceImageCount = 0, array $options = []): void
     {
-        self::assertAffordable($userId, self::quoteImage($quality, $modelId, $referenceImageCount), '发起图片生成');
+        self::assertAffordable($userId, self::quoteImage($quality, $modelId, $referenceImageCount, $options), '发起图片生成');
+    }
+
+    public static function usdToCredits(float $usd): float
+    {
+        if (!is_finite($usd) || $usd < 0) throw new \InvalidArgumentException('无效的结算金额');
+        $pricing = self::pricing();
+        return round($usd * (float) ($pricing['usd_cny'] ?? 7.2) * (float) ($pricing['markup'] ?? 1.25)
+            / max(0.0001, (float) ($pricing['credit_unit_cny'] ?? 0.01)), 2);
+    }
+
+    public static function settledImageCredits(array $billing): ?float
+    {
+        if (($billing['status'] ?? '') === 'refunded' && isset($billing['cost_usd'])
+            && is_numeric($billing['cost_usd']) && (float) $billing['cost_usd'] === 0.0) return 0.0;
+        if (($billing['status'] ?? '') !== 'settled' || !isset($billing['cost_usd'])
+            || !is_numeric($billing['cost_usd'])) return null;
+        $cost = (float) $billing['cost_usd'];
+        return is_finite($cost) && $cost >= 0 ? self::usdToCredits($cost) : null;
     }
 
     public static function assertVideoAffordable(int $userId, int $durationSeconds, string $resolution = '', string $modelId = ''): void
@@ -292,17 +336,28 @@ SQL);
 
         try {
             return Db::transaction(function () use ($userId, $amount, $meta, $refType, $refId): ?array {
-                if ($refType !== '' && $refId > 0 && self::hasConsumeForRef($refType, $refId)) {
-                    return null;
-                }
-
                 $user = User::where('id', $userId)->lock(true)->find();
                 if (!$user instanceof User) {
                     return null;
                 }
 
+                if ($refType !== '' && $refId > 0 && self::hasConsumeForRef($refType, $refId)) {
+                    return null;
+                }
+
+                $providerTaskId = (string) ($meta['meta_json']['provider_task_id'] ?? '');
+                if (($meta['modality'] ?? '') === 'image' && $providerTaskId !== '') {
+                    $existing = CreditLedger::where('user_id', $userId)->where('entry_type', 'consume')
+                        ->where('model_config_id', (int) ($meta['model_config_id'] ?? 0))
+                        ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(meta_json, '$.provider_task_id')) = ?", [$providerTaskId])->find();
+                    if ($existing instanceof CreditLedger) {
+                        return ['charged' => abs((float) $existing->getAttr('amount')),
+                            'balance' => (float) $user->getAttr('credit_balance'), 'ledger_id' => (int) $existing->getAttr('id')];
+                    }
+                }
+
                 $before = round((float) $user->getAttr('credit_balance'), 2);
-                if ($before + 0.00001 < $amount) {
+                if ($before + 0.00001 < $amount && empty($meta['settle_actual_usage'])) {
                     // 预检应已拦截；此处不阻断已成功的上游 AI，改为扣到 0 并记负差额说明。
                     $amount = $before;
                     if ($amount <= 0) {
@@ -361,6 +416,9 @@ SQL);
                 return;
             }
             if (self::hasConsumeForRef('ai_request_log', $logId)) {
+                $charged = CreditLedger::where('ref_type', 'ai_request_log')->where('ref_id', $logId)
+                    ->where('entry_type', 'consume')->value('amount');
+                AiRequestLog::where('id', $logId)->update(['credits_charged' => abs((float) $charged)]);
                 return;
             }
 
@@ -373,8 +431,19 @@ SQL);
             if ($modality === 'image') {
                 $quality = self::extractImageQuality($log);
                 $referenceImageCount = self::extractReferenceImageCount($log);
-                $amount = self::quoteImage($quality, $modelId, $referenceImageCount);
-                $detail = ['quality' => $quality, 'reference_image_count' => $referenceImageCount];
+                $context = self::decodeJsonAttr($log->getAttr('context_json'));
+                $options = is_array($context['image_options'] ?? null) ? $context['image_options'] : [];
+                $billing = is_array($context['provider_billing'] ?? null) ? $context['provider_billing'] : [];
+                if (ImageGenerationOptions::isOfficial25($modelId)) {
+                    $settled = self::settledImageCredits($billing);
+                    if ($settled === null) return;
+                    $amount = $settled;
+                } else {
+                    $amount = self::quoteImage($quality, $modelId, $referenceImageCount, $options);
+                }
+                $detail = ['quality' => $quality, 'reference_image_count' => $referenceImageCount,
+                    'image_options' => $options, 'provider_billing' => $billing,
+                    'provider_task_id' => $context['provider_task_id'] ?? ''];
             } elseif ($modality === 'video') {
                 [$duration, $resolution] = self::extractVideoBillingDims($log);
                 $amount = self::quoteVideo($duration, $resolution, $modelId);
@@ -401,6 +470,7 @@ SQL);
             }
 
             $result = self::consume($userId, $amount, [
+                'settle_actual_usage' => $modality === 'image' && ImageGenerationOptions::isOfficial25($modelId),
                 'modality' => $modality,
                 'model_config_id' => $modelConfigId > 0 ? $modelConfigId : null,
                 'model_id' => $modelId,

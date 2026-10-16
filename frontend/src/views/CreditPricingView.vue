@@ -79,15 +79,16 @@ const textRows = computed(() => {
 const imageRows = computed(() => {
   const models = catalog.value?.image?.models || {}
   return Object.entries(models).flatMap(([modelId, rule]) => {
-    const byQuality = rule.by_quality || {}
+    const byQuality = rule.by_resolution || rule.token_credits_per_1k || rule.by_quality || {}
     return Object.entries(byQuality).map(([quality, credits]) => {
       const creditValue = Number(credits || 0)
       return {
         model_id: modelId,
         label: String(rule.label || modelId),
-        quality,
+        quality: t(({ text_input: '文本输入', cached_text_input: '缓存文本输入', image_input: '图片输入',
+          cached_image_input: '缓存图片输入', image_output: '图片输出' } as Record<string, string>)[quality] || quality),
         credits: creditValue,
-        price_label: formatCreditsWithCny(creditValue),
+        price_label: `${formatCreditsWithCny(creditValue)}${rule.unit === 'actual_usage' ? ' / 1K tokens' : ''}`,
         basis: sanitizePublicPricingText(String(rule.basis || '')),
       }
     })
@@ -196,7 +197,7 @@ onMounted(load)
         <el-table :data="imageRows" :row-key="(row) => `${row.model_id}-${row.quality}`">
           <el-table-column prop="label" :label="t('模型')" min-width="160" />
           <el-table-column prop="model_id" :label="t('模型 ID')" min-width="160" />
-          <el-table-column prop="quality" :label="t('质量')" width="120" />
+          <el-table-column prop="quality" :label="t('规格')" width="140" />
           <el-table-column prop="price_label" :label="t('参考价（积分 / 人民币）')" min-width="180" />
           <el-table-column prop="basis" :label="t('计价依据')" min-width="260" show-overflow-tooltip />
         </el-table>

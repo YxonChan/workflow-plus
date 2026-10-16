@@ -6,26 +6,28 @@ namespace app\support;
 
 /**
  * 统一图片生成规格。
- * 默认通道：兼容 OpenAI Images API 的 NewAPI 图片模型。
+ * 默认通道：ToAPIs GPT Image 2.5 与 Official。
  * 从 model_configs.options 读取，未配置时使用下列默认值。
  */
 final class ImageGenerationOptions
 {
-    public const DEFAULT_ENDPOINT = 'https://my110.vip/v1';
+    public const DEFAULT_ENDPOINT = 'https://api.toapis.cn/v1';
 
     public const DEFAULT_MODEL_ID = 'gpt-image-2.5-flare';
 
-    public const DEFAULT_PROVIDER = 'openai_compatible';
+    public const DEFAULT_PROVIDER = 'toapis';
 
     /** @var array<int, string> */
     public const PREFERRED_MODEL_IDS = [
         'gpt-image-2.5-flare',
         'gpt-image-2.5-sunburst',
+        'gpt-image-2.5-flare-official',
+        'gpt-image-2.5-sunburst-official',
     ];
 
     public const DEFAULT_MODEL_NAME = 'GPT Image 2.5 Flare';
 
-    /** ToAPIs 使用比例尺寸，不使用旧的像素尺寸。 */
+    /** 普通版使用比例尺寸；Official 使用像素尺寸。 */
     public const SIZE_LANDSCAPE_16_9 = '16:9';
 
     /** 1:1 方图 */
@@ -37,13 +39,12 @@ final class ImageGenerationOptions
 
     public const DEFAULT_N = 1;
 
-    /** 默认图片质量；旧腾讯模型仍使用 medium，新模型使用 standard。 */
+    /** 默认图片质量；保留旧模型的 medium 默认值。 */
     public static function defaultQuality(string $modelId = ''): string
     {
-        if (self::isNewApiImageModel($modelId)) {
-            return 'standard';
+        if (self::isToapis25($modelId)) {
+            return 'high';
         }
-
         return 'medium';
     }
 
@@ -76,6 +77,9 @@ final class ImageGenerationOptions
      */
     public static function resolve(array $options, string $modelId = ''): array
     {
+        if (self::isToapis25($modelId)) {
+            return self::resolveToapis25($options, $modelId);
+        }
         if (!is_array($options)) {
             $options = [];
         }
@@ -84,10 +88,7 @@ final class ImageGenerationOptions
         $quality = self::normalizeQuality((string) ($options['quality'] ?? ''), $modelId);
         $n = max(1, min(10, (int) ($options['n'] ?? self::DEFAULT_N)));
 
-        if (self::isNewApiImageModel($modelId)) {
-            $size = '1024x1024';
-            $quality = 'standard';
-        } elseif (self::isStrictToapisGptImageModel($modelId)) {
+        if (self::isStrictToapisGptImageModel($modelId)) {
             $size = self::normalizeStrictToapisSize($size);
             // ToAPIs channel 107（gpt-image-2）目前仅接受 quality="medium"，其余取值会被上游拒绝：
             // ValidateRequestAndSetAction for channel 107: gpt-image-2 only supports quality="medium"
@@ -108,11 +109,6 @@ final class ImageGenerationOptions
 
         $out['resolution'] = self::normalizeResolution((string) ($options['resolution'] ?? ''), $modelId);
 
-        if (self::isNewApiImageModel($modelId)) {
-            $out['style'] = self::normalizeStyle((string) ($options['style'] ?? ''));
-            $out['response_format'] = self::normalizeResponseFormat((string) ($options['response_format'] ?? ''));
-        }
-
         return $out;
     }
 
@@ -123,12 +119,22 @@ final class ImageGenerationOptions
      */
     public static function defaultModelOptions(string $modelId = ''): array
     {
+        if (self::isToapis25($modelId)) {
+            $defaults = [
+                'provider' => 'toapis', 'quality' => 'high', 'n' => 1,
+                'size' => self::isOfficial25($modelId) ? '1024x1024' : '16:9',
+                'aspect_ratio' => '16:9', 'resolution' => '1K',
+                'poll_interval' => 5, 'poll_attempts' => 120,
+            ];
+            if (self::isOfficial25($modelId)) unset($defaults['aspect_ratio'], $defaults['resolution']);
+            return $defaults;
+        }
         $options = [
             'provider' => self::DEFAULT_PROVIDER,
             'model_name' => $modelId !== '' ? $modelId : self::DEFAULT_MODEL_ID,
             'quality' => self::defaultQuality($modelId),
             'n' => self::DEFAULT_N,
-            'size' => self::isNewApiImageModel($modelId) ? '1024x1024' : self::defaultSize($modelId),
+            'size' => self::defaultSize($modelId),
             'style' => 'vivid',
             'response_format' => 'url',
             'aspect_ratio' => self::DEFAULT_ASPECT_RATIO,
@@ -148,22 +154,20 @@ final class ImageGenerationOptions
     public static function applyToPayload(array $payload, array $options, string $modelId = ''): array
     {
         $resolved = self::resolve($options, $modelId);
+        if (self::isToapis25($modelId)) {
+            unset($payload['style'], $payload['response_format'], $payload['aspect_ratio'], $payload['resolution']);
+            return array_merge($payload, $resolved);
+        }
         $payload['size'] = $resolved['size'];
         $payload['quality'] = $resolved['quality'];
         $payload['n'] = $resolved['n'];
 
-        if (self::isNewApiImageModel($modelId)) {
-            $payload['style'] = $resolved['style'];
-            $payload['response_format'] = $resolved['response_format'];
-            unset($payload['aspect_ratio'], $payload['resolution']);
-        } else {
-            foreach (['aspect_ratio', 'resolution'] as $key) {
-                if (!empty($options[$key]) || !empty($resolved[$key])) {
-                    $payload[$key] = $resolved[$key];
-                }
+        foreach (['aspect_ratio', 'resolution'] as $key) {
+            if (!empty($options[$key]) || !empty($resolved[$key])) {
+                $payload[$key] = $resolved[$key];
             }
-            unset($payload['aspect_ratio']);
         }
+        unset($payload['aspect_ratio']);
 
         return $payload;
     }
@@ -237,20 +241,6 @@ final class ImageGenerationOptions
         return $quality;
     }
 
-    private static function normalizeStyle(string $style): string
-    {
-        $style = strtolower(trim($style));
-
-        return in_array($style, ['vivid', 'natural'], true) ? $style : 'vivid';
-    }
-
-    private static function normalizeResponseFormat(string $format): string
-    {
-        $format = strtolower(trim($format));
-
-        return in_array($format, ['url', 'b64_json'], true) ? $format : 'url';
-    }
-
     /**
      * 图片生成统一固定为 1K，避免旧配置或手工配置回退到高分辨率导致任务失败或资产图加载过慢。
      */
@@ -285,12 +275,55 @@ final class ImageGenerationOptions
         return $modelId === 'gpt-image-2' || $modelId === 'gpt-image-2-official';
     }
 
-    public static function isNewApiImageModel(string $modelId): bool
+    public static function isToapis25(string $modelId): bool
     {
-        return in_array(strtolower(trim($modelId)), [
-            'gpt-image-2.5-flare',
-            'gpt-image-2.5-sunburst',
-        ], true);
+        return in_array(strtolower(trim($modelId)), self::PREFERRED_MODEL_IDS, true);
+    }
+
+    public static function isOfficial25(string $modelId): bool
+    {
+        return self::isToapis25($modelId) && str_ends_with(strtolower(trim($modelId)), '-official');
+    }
+
+    public static function resolveToapis25(array $options, string $modelId): array
+    {
+        $official = self::isOfficial25($modelId);
+        $quality = strtolower(trim((string) ($options['quality'] ?? 'high')));
+        if ($quality === 'standard') $quality = 'high';
+        if (!in_array($quality, ['auto', 'low', 'medium', 'high', 'xhigh', 'max'], true)) {
+            throw new \InvalidArgumentException('不支持的图片画质');
+        }
+        $out = ['quality' => $official ? $quality : 'high', 'n' => 1];
+        if ($official) {
+            $size = strtolower(trim((string) ($options['size'] ?? '1024x1024')));
+            if (preg_match('/^(\d+)x(\d+)$/', $size, $matches) !== 1) {
+                throw new \InvalidArgumentException('Official 图片模型需要像素尺寸');
+            }
+            $width = (int) $matches[1]; $height = (int) $matches[2];
+            // Local resource limits; custom sizes still require upstream validation.
+            if ($width < 256 || $height < 256 || $width > 4096 || $height > 4096
+                || $width % 16 !== 0 || $height % 16 !== 0 || $width * $height > 16777216) {
+                throw new \InvalidArgumentException('图片像素尺寸超出范围或不是 16 的倍数');
+            }
+            $out['size'] = $size;
+        } else {
+            $ratio = trim((string) ($options['aspect_ratio'] ?? $options['size'] ?? '16:9'));
+            if ($ratio === '' || $ratio === 'adaptive') $ratio = '16:9';
+            if (!in_array($ratio, ['1:1', '3:2', '2:3', '4:3', '3:4', '5:4', '4:5', '16:9', '9:16', '21:9'], true)) {
+                throw new \InvalidArgumentException('不支持的图片比例');
+            }
+            $resolution = strtoupper(trim((string) ($options['resolution'] ?? '1K')));
+            if (!in_array($resolution, ['1K', '2K', '4K'], true)) {
+                throw new \InvalidArgumentException('不支持的图片分辨率');
+            }
+            $out += ['size' => $ratio, 'resolution' => $resolution];
+        }
+        $background = (string) ($options['background'] ?? '');
+        if (!in_array($background, ['', 'transparent'], true)) {
+            throw new \InvalidArgumentException('不支持的图片背景');
+        }
+        if ($background !== '') $out['background'] = $background;
+        return $out;
     }
 
     private static function normalizeStrictToapisSize(string $size): string

@@ -39,6 +39,7 @@ class AssetController extends BaseController
 {
     private int $runtimeUserId = 0;
     private int $lastAiRequestLogId = 0;
+    private array $lastImageTaskResponse = [];
     private ?AssetLookService $assetLookService = null;
 
     /**
@@ -1446,66 +1447,7 @@ class AssetController extends BaseController
      */
     public function detectLookAvatar()
     {
-        $this->assetLookService()->ensureSchema();
-        $payload = $this->payload();
-        $assetId = (int) ($payload['asset_id'] ?? 0);
-        $assetImageId = (int) ($payload['asset_image_id'] ?? 0);
-        if ($assetId <= 0 || $assetImageId <= 0) {
-            abort(422, '资产 id 和造型 id 不能为空');
-        }
-
-        $asset = $this->findOrFail($assetId);
-        $this->ensureAssetLookState((int) $asset->getAttr('series_id'));
-        $this->assertSeriesWorkflowEditable((int) $asset->getAttr('series_id'));
-        if ((string) $asset->getAttr('type') !== 'character') {
-            abort(422, '只有人物造型需要真人检测');
-        }
-        if (!$this->lookNeedsToapisIngest($asset)) {
-            abort(422, '当前作品不是写实风格，无需真人检测');
-        }
-
-        $image = AssetImage::where('id', $assetImageId)
-            ->where('asset_id', $assetId)
-            ->where('user_id', $this->effectiveUserId())
-            ->find();
-        if (!$image instanceof AssetImage || !$this->isCharacterLookImage($image)) {
-            abort(404, '人物造型不存在');
-        }
-
-        $displayUrl = trim((string) $image->getAttr('url'));
-        if ($displayUrl === '' || !$this->isUsableAssetImageUrl($displayUrl)) {
-            abort(422, '请先生成或上传这套造型图，再做真人检测');
-        }
-
-        if (ToapisPrivateAvatarService::isLookAvatarActive(
-            (string) ($image->getAttr('toapis_status') ?? ''),
-            (string) ($image->getAttr('toapis_asset_url') ?? ''),
-        )) {
-            return successCode([
-                'already_active' => true,
-                'asset' => $this->serialize($this->findOrFail($assetId)),
-                'job' => null,
-            ], '已过真人检测');
-        }
-
-        $existing = $this->findActiveLookIngestJob($assetId, $assetImageId);
-        if ($existing instanceof AssetImageJob) {
-            return successCode([
-                'already_active' => false,
-                'asset' => $this->serialize($this->findOrFail($assetId)),
-                'job' => $this->serializeImageJob($existing),
-            ], '真人检测进行中', 202);
-        }
-
-        $this->queueLookToapisIngestJob($asset, $image, $displayUrl);
-        $this->clearAssetCache();
-        $job = $this->findActiveLookIngestJob($assetId, $assetImageId);
-
-        return successCode([
-            'already_active' => false,
-            'asset' => $this->serialize($this->findOrFail($assetId)),
-            'job' => $job instanceof AssetImageJob ? $this->serializeImageJob($job) : null,
-        ], '真人检测已加入队列', 202);
+        abort(410, '独立真人检测已停用，人物造型将在视频生成时自动审核');
     }
 
     /**
@@ -1923,6 +1865,7 @@ class AssetController extends BaseController
     public function callImageGeneration(ModelConfig $model, string $prompt, array $context = []): string
     {
         $this->lastAiRequestLogId = 0;
+        $this->lastImageTaskResponse = [];
         $startedAt = microtime(true);
         $response = '';
         $httpStatus = 0;
@@ -1944,6 +1887,7 @@ class AssetController extends BaseController
             'model' => $modelId ?: ImageGenerationOptions::DEFAULT_MODEL_ID,
             'prompt' => $prompt,
         ], $options, $modelId);
+        $context['image_options'] = ImageGenerationOptions::resolve($options, $modelId);
 
         $resumeTaskIdEarly = trim((string) ($context['provider_task_id'] ?? ''));
         if ($resumeTaskIdEarly === '') {
@@ -1966,6 +1910,7 @@ class AssetController extends BaseController
                 $quality,
                 (string) ($payload['model'] ?? $modelId),
                 count($referenceUrlsForCredit),
+                $options + ['estimated_text_tokens' => max(1, (int) ceil(mb_strlen($prompt) / 2))],
             );
         }
 
@@ -1979,7 +1924,6 @@ class AssetController extends BaseController
         }
 
         $requestModelId = trim((string) ($payload['model'] ?? $modelId));
-        $isNewApiImageModel = ImageGenerationOptions::isNewApiImageModel($requestModelId);
         $referenceImageUrls = [];
         $referenceImagePaths = [];
         $tempFiles = [];
@@ -1993,14 +1937,16 @@ class AssetController extends BaseController
                 $mainImageUrls = [$singleUrl];
             }
         }
-        if ($mainImageUrls !== []) {
+        if ($mainImageUrls !== [] && $resumeTaskIdEarly === '') {
             $referenceImageUrls = [];
             foreach ($mainImageUrls as $rawUrl) {
                 $rawUrl = trim((string) $rawUrl);
                 if ($rawUrl === '') {
                     continue;
                 }
-                $referenceImageUrl = $this->normalizeImageUrlForToapis($rawUrl);
+                $referenceImageUrl = ImageGenerationOptions::isToapis25($requestModelId)
+                    ? (new ToapisPrivateAvatarService())->imageSourceUrl($rawUrl, $endpoint, $apiKey)
+                    : $this->normalizeImageUrlForToapis($rawUrl);
                 if ($referenceImageUrl === '') {
                     abort(422, 'ToAPIs 参考图必须是可访问的 HTTP(S) URL，请配置 MEDIA_PUBLIC_BASE_URL 或使用公网图片地址');
                 }
@@ -2009,19 +1955,7 @@ class AssetController extends BaseController
                 }
             }
             if ($referenceImageUrls !== []) {
-                if ($isNewApiImageModel && trim((string) ($context['provider_task_id'] ?? '')) === '') {
-                    foreach ($referenceImageUrls as $referenceImageUrl) {
-                        $referenceImagePath = $this->downloadRemoteImageToTemp($referenceImageUrl, $tempFiles);
-                        if ($referenceImagePath === '') {
-                            $this->cleanupTempFiles($tempFiles);
-                            abort(422, 'NewAPI 参考图下载失败，请确认图片地址可公网访问且返回 image/* 内容');
-                        }
-                        $referenceImagePaths[] = $referenceImagePath;
-                    }
-                    $useMultipart = $referenceImagePaths !== [];
-                } else {
-                    $payload['image_urls'] = $referenceImageUrls;
-                }
+                $payload[ImageGenerationOptions::isOfficial25($requestModelId) ? 'image_urls' : 'reference_images'] = $referenceImageUrls;
             }
         }
 
@@ -2118,6 +2052,10 @@ class AssetController extends BaseController
         $skipPendingLog = $pendingTask instanceof PendingImageTaskException;
         if (!$skipPendingLog) {
             try {
+                $taskResponse = $this->lastImageTaskResponse;
+                $context['provider_task_id'] = (string) ($taskResponse['id'] ?? $resumeTaskId);
+                $context['provider_billing'] = is_array($taskResponse['billing'] ?? null) ? $taskResponse['billing'] : [];
+                $context['image_billing_pending'] = $imageUrl !== '' && ImageGenerationOptions::isOfficial25($requestModelId);
                 $log = AiRequestLog::create([
                     'user_id' => $this->effectiveUserId(),
                     'source' => 'image_generation',
@@ -2134,8 +2072,14 @@ class AssetController extends BaseController
                     'error_message' => $errorMessage,
                     'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                     'content_preview' => $imageUrl,
+                    'usage_json' => is_array($taskResponse['usage'] ?? null) ? $taskResponse['usage'] : [],
                 ]);
                 $this->lastAiRequestLogId = (int) $log->getAttr('id');
+                if ($context['image_billing_pending'] && (\app\support\CreditService::settledImageCredits($context['provider_billing']) === 0.0
+                    || (float) AiRequestLog::where('id', $log->getAttr('id'))->value('credits_charged') > 0)) {
+                    $context['image_billing_pending'] = false;
+                    $log->save(['context_json' => json_encode($context, JSON_UNESCAPED_UNICODE)]);
+                }
                 \think\facade\Log::info('[AiRequestLog#' . (int) $log->getAttr('id') . '] image_generation request_json=' . mb_substr((string) json_encode($requestSnapshot, JSON_UNESCAPED_UNICODE), 0, 4000));
             } catch (\Throwable $e) {
                 \think\facade\Log::error('[AiRequestLog] insert failed: ' . $e->getMessage());
@@ -2376,6 +2320,7 @@ class AssetController extends BaseController
 
     private function extractImageUrlFromResponse(array $decoded, string $endpoint, array $headers, array $options, string &$rawBody, array $context = []): string
     {
+        $this->lastImageTaskResponse = $decoded;
         $imageUrl = trim((string) ($decoded['data'][0]['url'] ?? $decoded['result']['data'][0]['url'] ?? $decoded['url'] ?? ''));
         $b64 = $decoded['data'][0]['b64_json'] ?? $decoded['result']['data'][0]['b64_json'] ?? '';
         if ($imageUrl === '' && is_string($b64) && $b64 !== '') {
@@ -2400,7 +2345,7 @@ class AssetController extends BaseController
         $status = (string) ($decoded['status'] ?? '');
         $id = trim((string) ($decoded['id'] ?? $decoded['data']['id'] ?? ''));
 
-        if ($id !== '' && ($object === 'generation.task' || in_array($status, ['queued', 'in_progress', 'completed', 'failed'], true))) {
+        if ($id !== '' && ($object === 'generation.task' || in_array($status, ['pending', 'queued', 'in_progress', 'completed', 'failed'], true))) {
             return $id;
         }
 
@@ -2409,6 +2354,14 @@ class AssetController extends BaseController
 
     private function rememberImageProviderTask(array $context, string $taskId): void
     {
+        $messageId = (int) ($context['quick_create_message_id'] ?? 0);
+        if ($messageId > 0 && trim($taskId) !== '') {
+            \app\model\QuickCreateMessage::where('id', $messageId)->where('user_id', $this->effectiveUserId())
+                ->where('status', 'running')->update([
+                    'error_message' => ImageProviderTaskState::pendingMessage($taskId),
+                    'update_time' => date('Y-m-d H:i:s'),
+                ]);
+        }
         $jobId = (int) ($context['job_id'] ?? 0);
         if ($jobId <= 0 || trim($taskId) === '') {
             return;
@@ -2475,6 +2428,7 @@ class AssetController extends BaseController
 
             $status = strtolower((string) ($decoded['status'] ?? ''));
             if ($status === 'completed') {
+                $this->lastImageTaskResponse = $decoded;
                 $imageUrl = trim((string) ($decoded['result']['data'][0]['url'] ?? $decoded['data'][0]['url'] ?? $decoded['url'] ?? ''));
                 if ($imageUrl !== '') {
                     return $this->persistGeneratedImageUrl($imageUrl, $context);

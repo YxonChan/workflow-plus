@@ -309,7 +309,7 @@ class AssetLookService
     }
 
     /**
-     * 写实且人像入库 active 时返回 asset://；否则返回展示图（调用方不得把展示图当写实人脸发给 Seedance）。
+     * 视频使用原始展示图，由生成请求触发素材审核。
      *
      * @return array{url:string,used_toapis:bool,status:string}
      */
@@ -322,13 +322,6 @@ class AssetLookService
         $displayUrl = trim($displayUrl);
         $toapisAssetUrl = trim($toapisAssetUrl);
         $toapisStatus = strtolower(trim($toapisStatus));
-        if (
-            $this->needsLookToapisAvatar($visualStyle)
-            && ToapisPrivateAvatarService::isLookAvatarActive($toapisStatus, $toapisAssetUrl)
-        ) {
-            return ['url' => $toapisAssetUrl, 'used_toapis' => true, 'status' => 'active'];
-        }
-
         return ['url' => $displayUrl, 'used_toapis' => false, 'status' => $toapisStatus];
     }
 

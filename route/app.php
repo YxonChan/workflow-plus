@@ -35,6 +35,7 @@ Route::group('api', function () {
     Route::post('agent/tasks/cancel', 'AgentTaskController/cancel');
 
     Route::post('model-configs/list', 'ModelConfigController/index');
+    Route::post('quick-create/quote', 'QuickCreateController/quote');
     Route::post('prompt-assistant/list', 'PromptAssistantController/index');
     Route::post('prompt-assistant/create', 'PromptAssistantController/create');
     Route::post('prompt-assistant/detail', 'PromptAssistantController/detail');

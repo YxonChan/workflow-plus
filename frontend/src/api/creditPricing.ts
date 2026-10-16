@@ -27,6 +27,8 @@ export interface CreditPricingCatalog {
       label?: string
       unit?: string
       by_quality?: Record<string, number>
+      by_resolution?: Record<string, number>
+      token_credits_per_1k?: Record<string, number>
       default_quality?: string
       basis?: string
     }>

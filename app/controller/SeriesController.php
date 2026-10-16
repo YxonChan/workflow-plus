@@ -1643,7 +1643,7 @@ class SeriesController extends BaseController
 
     /**
      * 视频生成前检查被引用资产是否具备可用参考。
-     * 场景/道具仍要求核心视图；写实人物要求已入库的造型，不再因缺核心图挡片。
+     * 场景/道具要求核心视图；人物使用被引用的造型原图或核心图，审核在视频任务内进行。
      *
      * @param array<int, array<string, mixed>> $readyShots
      */
@@ -1667,7 +1667,7 @@ class SeriesController extends BaseController
 
         abort(
             422,
-            "节点【{$nodeLabel}】无法生成视频：以下资产缺少可用参考，请先完成造型、真人检测或核心图后再试："
+            "节点【{$nodeLabel}】无法生成视频：以下资产缺少可用参考，请先完成造型或核心图后再试："
             . implode('、', $names)
         );
     }
@@ -1732,7 +1732,7 @@ class SeriesController extends BaseController
             }
             $type = (string) $asset->getAttr('type');
             $assetId = (int) $asset->getAttr('id');
-            if ($type === 'character' && $this->assetLookService()->needsLookToapisAvatar($visualStyle)) {
+            if ($type === 'character') {
                 $reason = $this->realisticCharacterVideoReadinessReason($asset, $referencedLooks);
                 if ($reason === '') {
                     continue;
@@ -1784,7 +1784,6 @@ class SeriesController extends BaseController
         $assetId = (int) $asset->getAttr('id');
         $looksById = [];
         $hasLookUrl = false;
-        $hasActiveLook = false;
         foreach ($asset->images as $image) {
             if (!$image instanceof AssetImage) {
                 continue;
@@ -1797,12 +1796,6 @@ class SeriesController extends BaseController
                 continue;
             }
             $hasLookUrl = true;
-            if (ToapisPrivateAvatarService::isLookAvatarActive(
-                (string) ($image->getAttr('toapis_status') ?? ''),
-                (string) ($image->getAttr('toapis_asset_url') ?? ''),
-            )) {
-                $hasActiveLook = true;
-            }
         }
 
         $specific = [];
@@ -1817,33 +1810,22 @@ class SeriesController extends BaseController
                 $imageId = (int) ($look['asset_image_id'] ?? 0);
                 $label = $this->lookVideoGateLabel($asset, $look);
                 if ($imageId <= 0) {
-                    if ($hasActiveLook) {
+                    if ($hasLookUrl || $this->assetHasCompletedCoreView($asset)) {
                         continue;
                     }
-                    return $hasLookUrl
-                        ? "{$label}尚未完成真人检测，请到资产页点击「真人检测」"
-                        : '缺少可用造型图';
+                    return '缺少可用造型图';
                 }
                 $image = $looksById[$imageId] ?? null;
                 if (!$image instanceof AssetImage || trim((string) $image->getAttr('url')) === '') {
                     return "{$label}缺少造型图，请先生成造型";
-                }
-                if (!ToapisPrivateAvatarService::isLookAvatarActive(
-                    (string) ($image->getAttr('toapis_status') ?? ''),
-                    (string) ($image->getAttr('toapis_asset_url') ?? ''),
-                )) {
-                    return "{$label}尚未完成真人检测，请到资产页点击「真人检测」";
                 }
             }
 
             return '';
         }
 
-        if ($hasActiveLook) {
+        if ($hasLookUrl || $this->assetHasCompletedCoreView($asset)) {
             return '';
-        }
-        if ($hasLookUrl) {
-            return '人物造型尚未完成真人检测，请到资产页对该造型点击「真人检测」';
         }
 
         return '缺少可用造型图';
@@ -7053,7 +7035,7 @@ SYS;
 10) prop 只包含非服装类关键道具、装备、手持物和剧情物件；scene 只放地点/空间/环境，不混入人物动作和一次性事件。
 11) 只有明确是人类或类人可穿搭角色的 character，才必须输出至少 1 个 character_looks；look_name 建议用“第N集常服/制服/礼服”等。如果剧情没明说服装，请根据时代、身份、职业/阶层、场景保守推断，并在 tags 加 inferred_look。
 12) 动物、宠物、怪物、坐骑、非人类生物仍然可以归类为 character，但默认不要强行输出 character_looks；除非剧情明确要求其具备稳定可穿戴造型，并在 tags 标记 humanoid 或 anthropomorphic。
-13) character_looks 的 image_prompt（全风格统一）：输出左右分栏造型板。左栏正、侧、背三个无头全身（头从衣领处切除，只看服装结构）；右栏同一人物放大特写（头部五官完整）。禁止红笔涂脸；禁止只出一张带头正面全身。白底棚拍，保持角色五官发型体型稳定，重点变化在服装与整体造型。写实造型的人像入库由系统在展示图完成后自动处理，不要写进 image_prompt。
+13) character_looks 的 image_prompt（全风格统一）：输出左右分栏造型板。左栏正、侧、背三个无头全身（头从衣领处切除，只看服装结构）；右栏同一人物放大特写（头部五官完整）。禁止红笔涂脸；禁止只出一张带头正面全身。白底棚拍，保持角色五官发型体型稳定，重点变化在服装与整体造型。参考素材由系统在视频生成时自动审核，不要写进 image_prompt。
 14) 服装必须是可公开外穿的完整套装，至少包含上衣、裤装/裙装、鞋履，可包含帽子/发饰/腰带/外套；禁止只输出内衣、内裤、贴身打底服或裸露身体。
 15) 输出 JSON 建议使用 { "assets": [ ... ], "character_looks": [ ... ] }；assets 中 type 只能是 character、scene、prop。
 16) 硬性：每个 character_looks 的 character_name / match_character 必须在 assets 里有一条同名 type=character。禁止只输出造型、漏掉人物本体。
@@ -9881,7 +9863,7 @@ SYS;
     }
 
     /**
-     * 视频参考资产字段收口：写实造型仅在人像入库 active 时使用 asset://。
+     * 视频参考资产使用原始造型图，审核由生成任务处理。
      *
      * @param array<string, mixed> $asset
      * @return array<string, mixed>
@@ -10796,14 +10778,6 @@ PROMPT;
             $alias = strtolower(trim((string) ($asset['reference_alias'] ?? '')));
             $type = strtolower(trim((string) ($asset['type'] ?? '')));
             $role = strtolower(trim((string) ($asset['reference_role'] ?? 'view')));
-            $visualStyle = $this->seriesVisualStyleForId((int) ($asset['series_id'] ?? 0));
-            $needsToapis = $type === 'character' && $this->assetLookService()->needsLookToapisAvatar($visualStyle);
-            if ($needsToapis && $role !== 'look') {
-                continue;
-            }
-            if ($needsToapis && $role === 'look' && !(bool) ($asset['used_toapis'] ?? false)) {
-                continue;
-            }
             $key = $type === 'character'
                 ? 'character:' . (int) ($asset['id'] ?? 0)
                 : ($type === 'scene'
@@ -11533,7 +11507,7 @@ PROMPT;
     /**
      * 调用图生视频模型。
      */
-    public function callWorkflowVideoGeneration(ModelConfig $model, string $prompt, string $imageUrl, string $duration, array $assets, array $context = []): string
+    public function callWorkflowVideoGeneration(ModelConfig $model, string $prompt, string $imageUrl, string $duration, array $assets, array $context = [], ?callable $onPoll = null): string
     {
         $this->lastAiRequestLogId = 0;
         $startedAt = microtime(true);
@@ -11709,6 +11683,16 @@ PROMPT;
                 }
             }
 
+            $payload = ToapisPrivateAvatarService::applyVideoReview($payload, $endpoint);
+            if (!empty($payload['private_asset_review'])) {
+                $payload['client_business_id'] = trim((string) ($context['idempotency_key'] ?? '')) ?: bin2hex(random_bytes(16));
+                $options['poll_interval'] = max(5, (int) ($options['poll_interval'] ?? 5));
+                $options['poll_attempts'] = max(480, (int) ($options['poll_attempts'] ?? 120));
+                if ($requestPayloadForLog !== []) {
+                    $requestPayloadForLog['private_asset_review'] = true;
+                    $requestPayloadForLog['client_business_id'] = $payload['client_business_id'];
+                }
+            }
             $headers = ['Content-Type: application/json'];
             if ($apiKey !== '') {
                 $headers[] = 'Authorization: Bearer ' . $apiKey;
@@ -11766,7 +11750,7 @@ PROMPT;
                         ]);
                         Log::info("[VideoJob#{$videoJobId}] {$providerLabel} task_id={$taskId}, result_endpoint={$pollEndpoint}");
                     }
-                    $pollResult = $this->pollWorkflowVideoResult($endpoint, $headers, $taskId, $options, $resultEndpoint);
+                    $pollResult = $this->pollWorkflowVideoResult($endpoint, $headers, $taskId, $options, $resultEndpoint, $onPoll);
                     $pollTrace = is_array($pollResult['trace'] ?? null) ? $pollResult['trace'] : [];
                     $rawBody .= "\n\n[POLL_RESULT]\n" . ($pollResult['raw'] ?? '');
                     $videoUrl = (string) ($pollResult['video_url'] ?? '');
@@ -14224,17 +14208,26 @@ PROMPT;
             }
 
             if (ToapisPrivateAvatarService::isAssetUri($url)) {
-                if (!in_array($url, $prepared, true)) {
-                    $prepared[] = $url;
+                if ($isToapis) {
+                    $ownedIds = Asset::where('user_id', $this->effectiveUserId())->column('id');
+                    $source = $ownedIds === [] ? null : AssetImage::whereIn('asset_id', $ownedIds)->where('toapis_asset_url', $url)->value('url');
+                    if (!is_string($source) || trim($source) === '') {
+                        abort(422, '旧人像素材缺少原图，请重新选择参考图片后生成视频');
+                    }
+                    $url = trim($source);
+                } else {
+                    if (!in_array($url, $prepared, true)) $prepared[] = $url;
+                    continue;
                 }
-                continue;
             }
 
             if ($isToapis) {
-                $url = $this->normalizeImageUrlForToapis($url);
+                $sourceUrl = $url;
+                $url = (new ToapisPrivateAvatarService())->imageSourceUrl($url, $endpoint, $apiKey);
                 if ($url === '') {
                     abort(422, '视频参考图必须是可访问的 HTTP(S) URL，请配置 MEDIA_PUBLIC_BASE_URL 或使用公网图片地址');
                 }
+                if ($url !== $sourceUrl) $referenceUploadMap[] = ['source_url' => $sourceUrl, 'toapis_url' => $url];
             }
 
             if ($isArk) {
@@ -14256,18 +14249,6 @@ PROMPT;
                 if ($url === '') {
                     abort(422, 'MiniMax 视频参考图必须是可访问的公网 HTTP(S) URL，请配置 MEDIA_PUBLIC_BASE_URL 或使用公网图片地址');
                 }
-            }
-
-            if ($isToapis && $this->isToapisSeedance2Model($modelLower)) {
-                $uploadedUrl = $this->uploadImageToToapis($endpoint, $apiKey, $url, $tempFiles);
-                if ($uploadedUrl === '') {
-                    abort(422, 'ToAPIs 视频参考图上传失败：' . $url);
-                }
-                $referenceUploadMap[] = [
-                    'source_url' => $url,
-                    'toapis_url' => $uploadedUrl,
-                ];
-                $url = $uploadedUrl;
             }
 
             if (!in_array($url, $prepared, true)) {
@@ -15112,11 +15093,11 @@ PROMPT;
         ];
     }
 
-    private function pollWorkflowVideoResult(string $submitEndpoint, array $headers, string $taskId, array $options, string $responseResultEndpoint = ''): array
+    private function pollWorkflowVideoResult(string $submitEndpoint, array $headers, string $taskId, array $options, string $responseResultEndpoint = '', ?callable $onPoll = null): array
     {
         $resultEndpoint = $this->resolveVideoResultEndpoint($submitEndpoint, $taskId, $options, $responseResultEndpoint);
         $interval = max(2, min(20, (int) ($options['poll_interval'] ?? 5)));
-        $maxAttempts = max(1, min(180, (int) ($options['poll_attempts'] ?? 120)));
+        $maxAttempts = max(1, min(ToapisPrivateAvatarService::isToapisEndpoint($submitEndpoint) ? 480 : 180, (int) ($options['poll_attempts'] ?? 120)));
         $lastRaw = '';
         $errorMessage = '';
         $trace = [
@@ -15127,6 +15108,7 @@ PROMPT;
         ];
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            if ($onPoll !== null) $onPoll($attempt, 'processing');
             if ($attempt > 0) {
                 sleep($interval);
             }

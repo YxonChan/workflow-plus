@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import {
@@ -14,6 +14,7 @@ import type { AdminUser, ModelConfig, ModelConfigGroup, ModelConfigPayload, Mode
 import PageToolbar from '@/components/ui/PageToolbar.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { resolveIcon } from '@/utils/iconRegistry'
+import { isToapisImage, isOfficialImage, imageRatios, officialImageSizes, officialImageQualities } from '@/utils/imageModelOptions'
 
 const { t } = useI18n()
 // ── Type metadata ─────────────────────────────────────────────────────────────
@@ -37,9 +38,9 @@ const selectedId = ref<number | null>(null)
 const formRef    = ref<FormInstance>()
 
 /** 图片尺寸：ToAPIs 比例尺寸 */
-type ImageAspectPreset = '16:9' | '1:1'
+type ImageAspectPreset = string
 /** 清晰度：标准 / 高清 / 超清（超清在 OpenAI 兼容接口上映射为 high） */
-type ImageQualityPreset = 'standard' | 'high' | 'ultra'
+type ImageQualityPreset = string
 type VideoProviderPreset = 'generic' | 'yinhe_async' | 'minimax_v2'
 
 interface FormState {
@@ -55,6 +56,9 @@ interface FormState {
   image_aspect: ImageAspectPreset
   /** 图片模型：清晰度 */
   image_quality: ImageQualityPreset
+  image_resolution: string
+  image_size: string
+  image_transparent: boolean
   /** 视频模型：供应商异步协议 */
   video_provider: VideoProviderPreset
   /** 视频模型：显式查询端点，{id} 会替换为任务 ID */
@@ -80,6 +84,9 @@ const form = reactive<FormState>({
   supports_vision: false,
   image_aspect: '16:9',
   image_quality: 'standard',
+  image_resolution: '1K',
+  image_size: '1024x1024',
+  image_transparent: false,
   video_provider: 'generic',
   video_result_endpoint: '',
   video_poll_interval: 5,
@@ -91,6 +98,13 @@ const form = reactive<FormState>({
   user_id: null,
   is_default: false,
   enabled: true,
+})
+
+const formImageModel = computed(() => ({ model_id: form.model_id, options: {} }))
+const formToapisImage = computed(() => isToapisImage(formImageModel.value))
+const formOfficialImage = computed(() => isOfficialImage(formImageModel.value))
+watch(() => form.model_id, () => {
+  if (formToapisImage.value && !officialImageQualities.includes(form.image_quality)) form.image_quality = 'high'
 })
 
 function imageSizeFromAspect(aspect: ImageAspectPreset): string {
@@ -118,7 +132,7 @@ function parseImageQualityFromOptions(opt: Record<string, unknown>): ImageQualit
 }
 
 function imageQualityLabel(value: unknown): string {
-  const labels: Record<string, string> = { low: '低清', medium: '标准', standard: '标准', high: '高清', ultra: '超清' }
+  const labels: Record<string, string> = { auto: '自动', low: '低清', medium: '中清', standard: '标准', high: '高清', xhigh: '超高清', max: '最高画质', ultra: '超清' }
   return t(labels[String(value || '').toLowerCase()] || '标准')
 }
 
@@ -177,6 +191,9 @@ function openCreate(type: ModelType) {
   form.supports_vision = false
   form.image_aspect = '16:9'
   form.image_quality = 'standard'
+  form.image_resolution = '1K'
+  form.image_size = '1024x1024'
+  form.image_transparent = false
   form.video_provider = type === 'video' ? 'yinhe_async' : 'generic'
   form.video_result_endpoint = type === 'video'
     ? 'https://api-aigc.fzyinghe.com/video/generation/tasks/{id}'
@@ -209,6 +226,13 @@ function openEdit(model: ModelConfig) {
   if (model.type === 'image') {
     form.image_aspect = parseImageAspectFromOptions(opt)
     form.image_quality = parseImageQualityFromOptions(opt)
+    if (isToapisImage(model)) {
+      form.image_quality = String(opt.quality || 'high')
+      form.image_aspect = String(opt.aspect_ratio || opt.size || '16:9')
+      form.image_resolution = String(opt.resolution || '1K')
+      form.image_size = String(opt.size || '1024x1024')
+      form.image_transparent = opt.background === 'transparent'
+    }
   }
   if (model.type === 'video') {
     const provider = String(opt.provider ?? '').toLowerCase()
@@ -260,7 +284,25 @@ async function saveModel() {
     baseOptions.max_tokens = Math.max(2048, Math.min(65536, Math.round(form.max_tokens) || 65536))
     baseOptions.supports_vision = form.supports_vision
   }
-  if (form.type === 'image') {
+  if (form.type === 'image' && formToapisImage.value) {
+    delete baseOptions.style
+    delete baseOptions.response_format
+    delete baseOptions.model_version
+    baseOptions.provider = 'toapis'
+    baseOptions.toapis_image_schema = 1
+    baseOptions.n = 1
+    baseOptions.quality = formOfficialImage.value ? form.image_quality : 'high'
+    baseOptions.background = form.image_transparent ? 'transparent' : ''
+    if (formOfficialImage.value) {
+      baseOptions.size = form.image_size
+      delete baseOptions.aspect_ratio
+      delete baseOptions.resolution
+    } else {
+      baseOptions.size = form.image_aspect
+      baseOptions.aspect_ratio = form.image_aspect
+      baseOptions.resolution = form.image_resolution
+    }
+  } else if (form.type === 'image') {
     baseOptions.size = imageSizeFromAspect(form.image_aspect)
     baseOptions.quality = imageQualityToOption(form.image_quality)
     baseOptions.n = 1
@@ -687,7 +729,14 @@ async function probeChannel(model: ModelConfig) {
             />
             <p class="field-hint">{{ t('剧本工作流会读取此值；后端上限 65536。提取剧集等节点建议 32768 及以上。') }}</p>
           </el-form-item>
-          <template v-if="form.type === 'image'">
+          <template v-if="form.type === 'image' && formToapisImage">
+            <el-form-item v-if="formOfficialImage" :label="t('图片尺寸')"><el-select v-model="form.image_size" filterable allow-create><el-option v-for="size in officialImageSizes" :key="size" :value="size" :label="size" /></el-select></el-form-item>
+            <el-form-item v-else :label="t('画幅比例')"><el-select v-model="form.image_aspect"><el-option v-for="ratio in imageRatios" :key="ratio" :value="ratio" :label="ratio" /></el-select></el-form-item>
+            <el-form-item v-if="!formOfficialImage" :label="t('图片分辨率')"><el-select v-model="form.image_resolution"><el-option v-for="value in ['1K', '2K', '4K']" :key="value" :value="value" :label="value" /></el-select></el-form-item>
+            <el-form-item v-if="formOfficialImage" :label="t('图片画质')"><el-select v-model="form.image_quality"><el-option v-for="value in officialImageQualities" :key="value" :value="value" :label="value" /></el-select></el-form-item>
+            <el-form-item :label="t('透明背景')"><el-switch v-model="form.image_transparent" /></el-form-item>
+          </template>
+          <template v-else-if="form.type === 'image'">
             <el-form-item :label="t('图片尺寸')">
               <template #label>
                 <div class="form-label-with-icon">

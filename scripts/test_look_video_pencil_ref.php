@@ -15,7 +15,7 @@ use app\support\VideoAssetImageRefreshService;
 $tests = 0;
 
 $look = new AssetLookService();
-assertTrue($look->needsLookToapisAvatar('realistic'), 'realistic needs toapis avatar');
+assertTrue(!$look->needsLookToapisAvatar('realistic'), 'realistic review occurs during generation');
 assertTrue(!$look->needsLookToapisAvatar('anime'), 'anime does not need toapis avatar');
 assertTrue(!$look->needsLookToapisAvatar('3d'), '3d does not need toapis avatar');
 
@@ -25,8 +25,8 @@ $withAvatar = $look->resolveVideoLookImageUrl(
     'realistic',
     'active',
 );
-assertSame('asset://pa_look_1', $withAvatar['url'], 'realistic active avatar uses asset://');
-assertSame(true, $withAvatar['used_toapis'], 'realistic active marks used_toapis');
+assertSame('https://example.com/look-display.png', $withAvatar['url'], 'realistic uses original image');
+assertSame(false, $withAvatar['used_toapis'], 'legacy avatar binding ignored');
 assertSame('active', $withAvatar['status'], 'realistic active keeps status');
 
 $animeIgnore = $look->resolveVideoLookImageUrl(
@@ -88,8 +88,8 @@ $item = [
 ];
 
 $resolvedRealistic = VideoAssetImageRefreshService::resolveAssetItem($item, $assetsById, [], 'realistic');
-assertSame('asset://pa_look_1', $resolvedRealistic['image_url'] ?? null, 'refresh realistic uses asset://');
-assertSame(true, $resolvedRealistic['used_toapis'] ?? null, 'refresh realistic used_toapis');
+assertSame('https://example.com/look-display.png', $resolvedRealistic['image_url'] ?? null, 'refresh realistic uses original');
+assertSame(false, $resolvedRealistic['used_toapis'] ?? null, 'refresh ignores legacy binding');
 assertSame('https://example.com/look-display.png', $resolvedRealistic['display_image_url'] ?? null, 'refresh keeps display url');
 
 $pinnedVersion = [
@@ -102,8 +102,8 @@ $pinnedVersion = [
 ];
 $pinnedItem = $item + ['asset_image_version_id' => 77];
 $resolvedPinned = VideoAssetImageRefreshService::resolveAssetItem($pinnedItem, $assetsById, $pinnedVersion, 'realistic');
-assertSame('asset://pa_look_1', $resolvedPinned['image_url'] ?? null, 'refresh realistic pinned version still uses current avatar');
-assertSame(true, $resolvedPinned['used_toapis'] ?? null, 'refresh realistic pinned used_toapis');
+assertSame('https://example.com/pinned-look.png', $resolvedPinned['image_url'] ?? null, 'pinned version preserved');
+assertSame(false, $resolvedPinned['used_toapis'] ?? null, 'pinned ignores current avatar');
 
 $resolvedAnime = VideoAssetImageRefreshService::resolveAssetItem($item, $assetsById, [], 'anime');
 assertSame('https://example.com/look-display.png', $resolvedAnime['image_url'] ?? null, 'refresh anime uses display');
@@ -159,9 +159,9 @@ $skippedUnready = $invoke('buildVideoReferenceImages', '', [
         'image_url' => 'https://example.com/scene.png',
     ],
 ], false);
-assertTrue(!isset($skippedUnready['image_1']) || ($skippedUnready['image_1']['type'] ?? '') !== 'character', 'unready realistic look skipped');
-assertSame('https://example.com/scene.png', $skippedUnready['image_1']['url'] ?? null, 'scene https still used');
-assertSame('scene', $skippedUnready['image_1']['type'] ?? null, 'only scene remains after skipping character core/look');
+assertSame('https://example.com/look-display.png', $skippedUnready['image_1']['url'] ?? null, 'original look usable before review');
+assertSame('https://example.com/scene.png', $skippedUnready['image_2']['url'] ?? null, 'scene follows character');
+assertSame('scene', $skippedUnready['image_2']['type'] ?? null, 'scene retained');
 
 $looksOnly = [
     ['character_name' => '刘备', 'look_name' => '第1集常服', 'description' => '汉室宗亲'],
@@ -195,7 +195,7 @@ $prepare = $reflection->getMethod('prepareVideoReferenceImagesForPayload');
 $prepare->setAccessible(true);
 $prepared = $prepare->invokeArgs($controller, [
     ['asset://pa_look_1', 'asset://pa_look_1'],
-    'https://toapis.cn/v1/videos/generations',
+    'https://other-provider.invalid/v1/videos/generations',
     'seedance-2',
     'sk-test',
     [],

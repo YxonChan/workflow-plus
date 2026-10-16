@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { updatePromptVideoTiming, type PromptQuickCreateDraft, type PromptVideoTiming } from '@/utils/promptAssistantHandoff'
+import { isToapisImage, isOfficialImage, imageRatios, imageSizeOptions, imagePixelsForRatio, officialImageQualities } from '@/utils/imageModelOptions'
 import { listAssets } from '@/api/asset'
 import { listSeries } from '@/api/series'
 import { listGrouped } from '@/api/modelConfig'
@@ -12,9 +13,8 @@ import {
   pollQuickCreateMessages,
   editQuickCreateMessage,
   sendQuickCreateMessage,
-  startFaceVerification,
-  pollFaceVerifications,
-  faceVerificationStreamUrl,
+  quoteQuickCreateImage,
+  type QuickCreateQuote,
   type QuickCreateAssetRef,
   type QuickCreateMessage,
   type QuickCreateMode,
@@ -94,11 +94,6 @@ interface PendingRef {
   face_verification?: FaceVerification
 }
 const pendingRefs = ref<PendingRef[]>([])
-const faceVerificationSources = new Map<number, EventSource>()
-const faceVerificationPolls = new Set<number>()
-const faceVerificationFallbacks = new Map<number, number>()
-const faceVerificationSubmitting = new Set<string>()
-const faceVerificationNotices = new Map<number, FaceVerification['status']>()
 const pendingRefImageUrls = computed(() => pendingRefs.value.filter((r) => r.media_type === 'image').map((r) => r.url))
 let isComposingPrompt = false
 let skipPendingRefRender = false
@@ -201,7 +196,12 @@ function togglePromptExpand(messageId: number) {
 const aspectRatio = ref('adaptive')
 const videoResolution = ref('480p')
 const imageResolution = ref('1K')
-const imageQuality = ref<'low' | 'medium' | 'high' | 'standard'>('medium')
+const imageQuality = ref('high')
+const imageSize = ref('1024x1024')
+const transparentBackground = ref(false)
+const imageQuote = ref<QuickCreateQuote | null>(null)
+let quoteTimer: ReturnType<typeof setTimeout> | undefined
+let quoteVersion = 0
 const duration = ref(5)
 const promptVideoTiming = ref<PromptVideoTiming | null>(null)
 const promptTimingDuration = ref(0)
@@ -209,14 +209,7 @@ const timingNeedsReview = ref(false)
 const count = ref(1)
 const generateAudio = ref(false)
 
-const imageAspectRatioOptions = [
-  { value: 'adaptive', label: '智能比例' },
-  { value: '16:9', label: '16:9' },
-  { value: '9:16', label: '9:16' },
-  { value: '1:1', label: '1:1' },
-  { value: '4:3', label: '4:3' },
-  { value: '3:4', label: '3:4' },
-]
+const imageAspectRatioOptions = imageRatios.map((value) => ({ value, label: value }))
 const imageResolutionOptions = ['1K', '2K', '4K']
 const imageQualityOptions = [
   { value: 'low', label: '低清' },
@@ -258,18 +251,15 @@ const isTencentVodImage = computed(() => {
   const provider = String(model.options?.provider ?? '').toLowerCase()
   return provider === 'tencent_vod' || provider === 'tencent' || provider === 'vod_aigc' || model.endpoint.includes('vod.tencentcloudapi.com')
 })
-const isFixedOpenAiImage = computed(() => {
-  const model = selectedImageModel.value
-  if (!model) return false
-  const modelId = String(model.model_id ?? '').toLowerCase()
-  const provider = String(model.options?.provider ?? '').toLowerCase()
-  return provider === 'openai_compatible' && (modelId === 'gpt-image-2.5-flare' || modelId === 'gpt-image-2.5-sunburst')
-})
-const supportsImageAspectRatio = computed(() => mode.value !== 'image' || (!isTencentVodImage.value && !isFixedOpenAiImage.value))
-const supportsImageResolution = computed(() => mode.value !== 'image' || (!isTencentVodImage.value && !isFixedOpenAiImage.value))
-const supportsImageQuality = computed(() => mode.value === 'image')
-const visibleImageQualityOptions = computed(() => isFixedOpenAiImage.value
-  ? [{ value: 'standard', label: '标准' }]
+const toapisImage = computed(() => isToapisImage(selectedImageModel.value))
+const officialImage = computed(() => isOfficialImage(selectedImageModel.value))
+const imageSizes = computed(() => [...new Set([...imageSizeOptions(selectedImageModel.value), imageSize.value])])
+const supportsImageAspectRatio = computed(() => !isTencentVodImage.value && !officialImage.value)
+const supportsImageResolution = computed(() => !isTencentVodImage.value && !officialImage.value)
+const supportsImageQuality = computed(() => mode.value === 'image' && (!toapisImage.value || officialImage.value))
+const visibleImageQualityOptions = computed(() => officialImage.value
+  ? [{ value: 'auto', label: '自动' }, { value: 'low', label: '低清' }, { value: 'medium', label: '中清' },
+    { value: 'high', label: '高清' }, { value: 'xhigh', label: '超高清' }, { value: 'max', label: '最高画质' }]
   : imageQualityOptions)
 const videoResolutionOptions = computed(() => resolveVideoResolutionOptions(selectedVideoModel.value))
 const videoAspectRatioChoices = computed(() => [
@@ -288,16 +278,36 @@ watch(isTencentVodImage, (enabled) => {
   imageResolution.value = '1K'
 })
 
-watch([isFixedOpenAiImage, mode], ([enabled, currentMode]) => {
-  if (currentMode !== 'image') return
-  if (enabled) {
-    aspectRatio.value = 'adaptive'
-    imageResolution.value = '1K'
-    imageQuality.value = 'standard'
-  } else if (imageQuality.value === 'standard') {
-    imageQuality.value = 'medium'
+watch(selectedImageModel, (model) => {
+  if (!model || !isToapisImage(model)) return
+  if (!imageRatios.includes(aspectRatio.value)) aspectRatio.value = String(model.options?.aspect_ratio || '16:9')
+  if (!['1K', '2K', '4K'].includes(imageResolution.value)) imageResolution.value = '1K'
+  if (!isOfficialImage(model) || !officialImageQualities.includes(imageQuality.value)) imageQuality.value = 'high'
+}, { immediate: true })
+
+function currentImageOptions() {
+  return {
+    ...(officialImage.value ? { size: imageSize.value } : { aspect_ratio: aspectRatio.value === 'adaptive' ? '16:9' : aspectRatio.value, resolution: imageResolution.value }),
+    quality: toapisImage.value && !officialImage.value ? 'high' : imageQuality.value,
+    background: transparentBackground.value ? 'transparent' : '', count: count.value,
   }
-})
+}
+
+watch([mode, selectedImageModelId, aspectRatio, imageResolution, imageSize, imageQuality, transparentBackground, count, promptText,
+  () => pendingRefs.value.length], () => {
+  const version = ++quoteVersion
+  clearTimeout(quoteTimer)
+  imageQuote.value = null
+  if (mode.value !== 'image' || !selectedImageModelId.value) return
+  quoteTimer = setTimeout(async () => {
+    try {
+      const result = await quoteQuickCreateImage({ model_config_id: selectedImageModelId.value, prompt: promptText.value,
+        reference_count: pendingRefs.value.filter((item) => item.media_type === 'image').length, options: currentImageOptions() })
+      if (version === quoteVersion) imageQuote.value = result
+    } catch { if (version === quoteVersion) imageQuote.value = null }
+  }, 300)
+}, { immediate: true })
+onBeforeUnmount(() => { clearTimeout(quoteTimer); quoteVersion++ })
 
 watch(selectedVideoModel, (model) => {
   if (!model || mode.value !== 'video') return
@@ -517,6 +527,7 @@ watch(myUserId, () => {
 
 const activePolls = new Set<number>()
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollInFlight = false
 
 function applyHistoryPage(
   page: { messages: QuickCreateMessage[]; has_more: boolean; oldest_id: number },
@@ -681,6 +692,9 @@ async function restorePromptAssistantDraft() {
       if (mode.value === 'video') selectedVideoModelId.value = value.settings.target_model_id
       else selectedImageModelId.value = value.settings.target_model_id
     }
+    if (mode.value === 'image' && isOfficialImage(models.find((model) => model.id === selectedImageModelId.value))) {
+      imageSize.value = imagePixelsForRatio(aspectRatio.value)
+    }
     if (mode.value === 'video') {
       duration.value = Number(value.duration) || Number(value.settings.duration) || 5
       const timing = value.timing
@@ -758,13 +772,6 @@ onBeforeUnmount(() => {
   if (sendCooldownTimer) clearTimeout(sendCooldownTimer)
   if (referenceHoverHideTimer) clearTimeout(referenceHoverHideTimer)
   videoObserver?.disconnect()
-  faceVerificationSources.forEach((source) => source.close())
-  faceVerificationSources.clear()
-  faceVerificationPolls.clear()
-  faceVerificationFallbacks.forEach((timer) => window.clearInterval(timer))
-  faceVerificationFallbacks.clear()
-  faceVerificationSubmitting.clear()
-  faceVerificationNotices.clear()
   videoObserver = null
 })
 
@@ -776,9 +783,12 @@ function ensurePolling() {
       pollTimer = null
       return
     }
+    if (pollInFlight) return
+    pollInFlight = true
     try {
       const res = await pollQuickCreateMessages([...activePolls])
       for (const fresh of res.messages) {
+        if (!activePolls.has(fresh.id)) continue
         const idx = messages.value.findIndex((m) => m.id === fresh.id)
         if (idx >= 0) messages.value[idx] = fresh
         if (fresh.status === 'success' || fresh.status === 'failed') {
@@ -787,6 +797,8 @@ function ensurePolling() {
       }
     } catch {
       // 静默轮询：网络抖动不打断用户
+    } finally {
+      pollInFlight = false
     }
   }, 4000)
 }
@@ -1399,8 +1411,6 @@ function pickMentionEntry(entry: MentionEntry) {
 }
 
 function removeRef(key: string) {
-  const removed = pendingRefs.value.find((ref) => ref.key === key)
-  if (removed?.face_verification?.id) stopFaceVerificationStream(removed.face_verification.id)
   pendingRefs.value = pendingRefs.value.filter((r) => r.key !== key)
 }
 
@@ -1586,150 +1596,6 @@ function uploadReference() {
   uploadInputRef.value?.click()
 }
 
-function faceUrlKey(url: string): string {
-  const raw = String(url || '').trim()
-  if (!raw) return ''
-  try {
-    if (/^https?:\/\//i.test(raw)) {
-      return new URL(raw).pathname || raw
-    }
-  } catch {
-    /* keep raw */
-  }
-  return raw
-}
-
-function isFaceVerificationBusy(ref: PendingRef): boolean {
-  const status = ref.face_verification?.status
-  return status === 'queued' || status === 'running' || faceVerificationSubmitting.has(ref.key)
-}
-
-function isFaceVerificationLocked(ref: PendingRef): boolean {
-  return isFaceVerificationBusy(ref) || ref.face_verification?.status === 'passed'
-}
-
-function faceVerificationButtonText(ref: PendingRef): string {
-  const status = ref.face_verification?.status
-  if (status === 'passed') return t('人脸已通过')
-  if (status === 'failed') return t('检测失败，重试')
-  if (status === 'queued' || status === 'running' || faceVerificationSubmitting.has(ref.key)) return t('检测中')
-  return t('检测人脸')
-}
-
-function notifyFaceVerification(result: FaceVerification) {
-  if (!result.id) return
-  const previous = faceVerificationNotices.get(result.id)
-  if (previous === result.status) return
-  faceVerificationNotices.set(result.id, result.status)
-
-  // 缓存命中「已通过」时按钮态已足够；仅在真正从排队/检测中变为通过时提示。
-  if (result.status === 'passed') {
-    if (previous === 'queued' || previous === 'running') {
-      ElMessage.success(result.message || t('人脸检测已通过'))
-    }
-    return
-  }
-  if (result.status === 'failed') {
-    ElMessage.error(result.message || t('人脸检测失败'))
-    return
-  }
-  if ((result.status === 'queued' || result.status === 'running') && previous !== 'queued' && previous !== 'running') {
-    ElMessage.info(t('人脸检测已加入队列'))
-  }
-}
-
-function stopFaceVerificationStream(id: number) {
-  const source = faceVerificationSources.get(id)
-  source?.close()
-  faceVerificationSources.delete(id)
-  faceVerificationPolls.delete(id)
-  const timer = faceVerificationFallbacks.get(id)
-  if (timer) window.clearInterval(timer)
-  faceVerificationFallbacks.delete(id)
-}
-
-function applyFaceVerification(result: FaceVerification, preferRefKey?: string) {
-  const resultUrlKey = faceUrlKey(result.source_url)
-  let matched = false
-  pendingRefs.value = pendingRefs.value.map((ref) => {
-    const byId = Boolean(result.id) && ref.face_verification?.id === result.id
-    const byKey = Boolean(preferRefKey) && ref.key === preferRefKey
-    const byUrl = Boolean(resultUrlKey) && faceUrlKey(ref.url) === resultUrlKey
-    if (!byId && !byKey && !byUrl) return ref
-    matched = true
-    return { ...ref, face_verification: result }
-  })
-  if (!matched && preferRefKey) {
-    pendingRefs.value = pendingRefs.value.map((ref) => (
-      ref.key === preferRefKey ? { ...ref, face_verification: result } : ref
-    ))
-  }
-  notifyFaceVerification(result)
-  if (result.status === 'passed' || result.status === 'failed') stopFaceVerificationStream(result.id)
-}
-
-function pollFaceVerification(id: number) {
-  if (faceVerificationPolls.has(id)) return
-  faceVerificationPolls.add(id)
-  void pollFaceVerifications([id]).then((res) => {
-    const result = res.verifications?.[0]
-    if (result) applyFaceVerification(result)
-  }).catch(() => undefined).finally(() => faceVerificationPolls.delete(id))
-}
-
-function subscribeFaceVerification(id: number) {
-  stopFaceVerificationStream(id)
-  if (typeof EventSource === 'undefined') {
-    const timer = window.setInterval(() => pollFaceVerification(id), 2000)
-    window.setTimeout(() => window.clearInterval(timer), 180000)
-    return
-  }
-  const source = new EventSource(faceVerificationStreamUrl(id))
-  faceVerificationSources.set(id, source)
-  source.addEventListener('face_verification', (event) => {
-    try { applyFaceVerification(JSON.parse((event as MessageEvent).data) as FaceVerification) } catch { /* ignore malformed event */ }
-  })
-  source.onerror = () => {
-    pollFaceVerification(id)
-    if (!faceVerificationFallbacks.has(id)) {
-      const timer = window.setInterval(() => pollFaceVerification(id), 2000)
-      faceVerificationFallbacks.set(id, timer)
-    }
-  }
-}
-
-async function verifyPendingRef(ref: PendingRef) {
-  if (ref.media_type !== 'image' || isFaceVerificationBusy(ref) || ref.face_verification?.status === 'passed') return
-  faceVerificationSubmitting.add(ref.key)
-  pendingRefs.value = pendingRefs.value.map((item) => (
-    item.key === ref.key
-      ? {
-          ...item,
-          face_verification: {
-            id: item.face_verification?.id ?? 0,
-            status: 'queued',
-            source_url: item.url,
-            message: item.face_verification?.message,
-          },
-        }
-      : item
-  ))
-  try {
-    const res = await startFaceVerification(ref.url)
-    applyFaceVerification(res.verification, ref.key)
-    if (res.verification.status === 'queued' || res.verification.status === 'running') {
-      subscribeFaceVerification(res.verification.id)
-    }
-  } catch {
-    pendingRefs.value = pendingRefs.value.map((item) => {
-      if (item.key !== ref.key) return item
-      if (item.face_verification?.id) return item
-      return { ...item, face_verification: undefined }
-    })
-  } finally {
-    faceVerificationSubmitting.delete(ref.key)
-  }
-}
 
 function handleUploadInput(event: Event) {
   const input = event.target as HTMLInputElement
@@ -1777,12 +1643,6 @@ function refillQuickCreateInput(message: QuickCreateMessage) {
       duration_seconds: ref.duration_seconds,
       face_verification: ref.face_verification,
     }))
-  pendingRefs.value
-    .map((ref) => ref.face_verification)
-    .filter((verification): verification is FaceVerification => Boolean(verification?.id))
-    .filter((verification) => verification.status === 'queued' || verification.status === 'running')
-    .forEach((verification) => subscribeFaceVerification(verification.id))
-
   const presetId = Number(options.style_preset_id || 0)
   stylePresetId.value = presetId > 0 ? presetId : null
   aspectRatio.value = options.aspect_ratio || 'adaptive'
@@ -1795,8 +1655,10 @@ function refillQuickCreateInput(message: QuickCreateMessage) {
     if (message.model_config_id > 0) selectedVideoModelId.value = message.model_config_id
   } else {
     imageResolution.value = options.resolution || '1K'
+    imageSize.value = options.size || '1024x1024'
+    transparentBackground.value = options.background === 'transparent'
     const quality = String(options.quality || 'medium').toLowerCase()
-    imageQuality.value = quality === 'low' || quality === 'medium' || quality === 'high' || quality === 'standard' ? quality : 'medium'
+    imageQuality.value = officialImageQualities.includes(quality) ? quality : 'high'
     if (message.model_config_id > 0) selectedImageModelId.value = message.model_config_id
   }
 
@@ -1851,15 +1713,11 @@ async function send() {
             },
       ),
       options: {
-        aspect_ratio: mode.value === 'image' && !supportsImageAspectRatio.value
-          ? ''
-          : (aspectRatio.value === 'adaptive' ? '' : aspectRatio.value),
-        resolution: mode.value === 'image'
-          ? (supportsImageResolution.value ? imageResolution.value : '')
-          : videoResolution.value,
-        count: count.value,
-        ...(mode.value === 'image' ? { quality: imageQuality.value } : {}),
-        ...(mode.value === 'video' ? { duration: duration.value, generate_audio: generateAudio.value } : {}),
+        ...(mode.value === 'image' ? currentImageOptions() : {
+          aspect_ratio: aspectRatio.value === 'adaptive' ? '' : aspectRatio.value,
+          resolution: videoResolution.value, count: count.value,
+          duration: duration.value, generate_audio: generateAudio.value,
+        }),
         ...(stylePresetId.value ? { style_preset_id: stylePresetId.value } : {}),
       },
     })
@@ -2147,22 +2005,6 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
                     <el-icon :size="24"><component :is="resolveIcon('VideoPlay')" /></el-icon>
                   </span>
                 </button>
-                <span
-                  v-if="ref.face_verification?.status"
-                  class="qc-ref-face-status"
-                  :class="`is-${ref.face_verification.status}`"
-                  :title="ref.face_verification.message || (
-                    ref.face_verification.status === 'passed' ? t('人脸已通过')
-                      : ref.face_verification.status === 'failed' ? t('人脸检测失败')
-                        : t('检测中')
-                  )"
-                >
-                  {{
-                    ref.face_verification.status === 'passed' ? t('人脸已通过')
-                      : ref.face_verification.status === 'failed' ? t('人脸检测失败')
-                        : t('检测中')
-                  }}
-                </span>
                 <span class="qc-ref-thumb-name">@{{ ref.name }}</span>
               </div>
             </div>
@@ -2498,22 +2340,6 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
             <el-icon :size="10"><component :is="resolveIcon('Check')" /></el-icon>
             {{ t('已上传') }}
           </span>
-          <button
-            v-if="ref.media_type === 'image' && ref.kind === 'upload'"
-            type="button"
-            class="qc-face-btn"
-            :class="{
-              'is-passed': ref.face_verification?.status === 'passed',
-              'is-running': isFaceVerificationBusy(ref),
-              'is-failed': ref.face_verification?.status === 'failed',
-            }"
-            :disabled="isFaceVerificationLocked(ref)"
-            :aria-busy="isFaceVerificationBusy(ref)"
-            :title="ref.face_verification?.message || faceVerificationButtonText(ref)"
-            @click.stop="verifyPendingRef(ref)"
-          >
-            <span>{{ faceVerificationButtonText(ref) }}</span>
-          </button>
           <span class="qc-pending-ref-name">{{ ref.name }}</span>
         </div>
       </div>
@@ -2649,7 +2475,7 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
           <el-option v-for="model in availableModels" :key="model.id" :value="model.id" :label="model.name" />
         </el-select>
 
-        <el-select v-if="mode === 'video' || supportsImageAspectRatio" v-model="aspectRatio" size="small" class="qc-param">
+        <el-select v-if="mode === 'video' || supportsImageAspectRatio" v-model="aspectRatio" :aria-label="t('画幅比例')" size="small" class="qc-param">
           <el-option
             v-for="opt in (mode === 'video' ? videoAspectRatioChoices : imageAspectRatioOptions)"
             :key="opt.value"
@@ -2661,11 +2487,14 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
         <el-select v-if="mode === 'video'" v-model="videoResolution" size="small" class="qc-param qc-param-narrow">
           <el-option v-for="opt in videoResolutionOptions" :key="opt" :value="opt" :label="opt" />
         </el-select>
-        <el-select v-else-if="supportsImageResolution" v-model="imageResolution" size="small" class="qc-param qc-param-narrow">
+        <el-select v-else-if="supportsImageResolution" v-model="imageResolution" :aria-label="t('图片分辨率')" size="small" class="qc-param qc-param-narrow">
           <el-option v-for="opt in imageResolutionOptions" :key="opt" :value="opt" :label="opt" />
         </el-select>
 
-        <el-select v-if="supportsImageQuality" v-model="imageQuality" size="small" class="qc-param qc-param-narrow">
+        <el-select v-if="mode === 'image' && officialImage" v-model="imageSize" :aria-label="t('图片尺寸')" filterable allow-create size="small" class="qc-param qc-image-size">
+          <el-option v-for="size in imageSizes" :key="size" :value="size" :label="size" />
+        </el-select>
+        <el-select v-if="supportsImageQuality" v-model="imageQuality" :aria-label="t('图片画质')" size="small" class="qc-param qc-param-narrow">
           <el-option v-for="opt in visibleImageQualityOptions" :key="opt.value" :value="opt.value" :label="t(opt.label)" />
         </el-select>
 
@@ -2681,6 +2510,10 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
         <el-checkbox v-if="mode === 'video' && !isMiniMaxVideo" v-model="generateAudio" size="small">
           {{ t('输出声音') }}
         </el-checkbox>
+        <label v-if="mode === 'image' && toapisImage" class="qc-transparency"><el-switch v-model="transparentBackground" size="small" :aria-label="t('透明背景')" /><span>{{ t('透明背景') }}</span></label>
+        <span v-if="mode === 'image' && imageQuote" class="qc-credit-quote" :title="imageQuote.estimated ? t('按实际用量结算') : ''">
+          {{ imageQuote.estimated ? t('预估 {credits} 积分，按实际用量结算', { credits: imageQuote.credits }) : t('预计 {credits} 积分', { credits: imageQuote.credits }) }}
+        </span>
 
         <button type="button" class="qc-send" :disabled="!canSend" @click="send">
           <el-icon :size="18"><component :is="resolveIcon('Top')" /></el-icon>
@@ -3988,6 +3821,10 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
 .qc-duration-warning {
   margin: 0 0 10px;
 }
+
+.qc-image-size { width: 150px; }
+.qc-transparency { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.qc-credit-quote { font-size: 12px; color: var(--text-secondary); line-height: 20px; max-width: 100%; overflow-wrap: anywhere; }
 
 .qc-param-narrow {
   width: 84px;

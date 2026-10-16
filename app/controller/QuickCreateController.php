@@ -13,10 +13,11 @@ use app\model\QuickCreateMessage;
 use app\model\User;
 use app\support\AssetVisibility;
 use app\support\ImageProviderTaskState;
+use app\support\ImageGenerationOptions;
+use app\support\CreditService;
 use app\support\MediaStorage;
 use app\support\ModelConfigResolver;
 use app\support\PendingImageTaskException;
-use app\support\ToapisPrivateAvatarService;
 use app\support\RedisCache;
 use app\support\SeriesStylePrompt;
 use think\facade\Db;
@@ -37,49 +38,7 @@ class QuickCreateController extends BaseController
 
     public function faceVerification()
     {
-        $userId = $this->currentUserId();
-        $url = $this->canonicalizeStorageUrl(trim((string) ($this->request->param('url') ?? '')));
-        if ($url === '' || (!str_starts_with($url, '/') && !preg_match('#^https?://#i', $url))) {
-            abort(422, '图片地址无效');
-        }
-        $sourceHash = hash('sha256', $url);
-        $existing = Db::transaction(function () use ($userId, $url, $sourceHash): ?QuickCreateFaceVerification {
-            return QuickCreateFaceVerification::where('user_id', $userId)
-                ->where('source_hash', $sourceHash)
-                ->whereIn('status', ['queued', 'running', 'passed', 'failed'])
-                ->order(['id' => 'desc'])
-                ->lock(true)
-                ->find();
-        });
-        if ($existing instanceof QuickCreateFaceVerification) {
-            if ((string) $existing->getAttr('status') === 'failed') {
-                $existing->save([
-                    'status' => 'queued',
-                    'asset_id' => 0,
-                    'asset_image_id' => 0,
-                    'asset_json' => [],
-                    'asset_url' => '',
-                    'error_message' => '',
-                    'started_at' => null,
-                    'finished_at' => null,
-                ]);
-                $existing->setAttr('status', 'queued');
-                $existing->setAttr('asset_id', 0);
-                $existing->setAttr('asset_image_id', 0);
-                $existing->setAttr('asset_json', []);
-                $existing->setAttr('asset_url', '');
-                $existing->setAttr('error_message', '');
-                $existing->setAttr('started_at', null);
-                $existing->setAttr('finished_at', null);
-            }
-            $message = (string) $existing->getAttr('status') === 'passed' ? '人脸已通过' : '人脸检测已在处理中';
-            return successCode(['verification' => $this->serializeFaceVerification($existing)], $message, (string) $existing->getAttr('status') === 'passed' ? 200 : 202);
-        }
-        $task = QuickCreateFaceVerification::create([
-            'user_id' => $userId, 'source_url' => $url, 'source_hash' => $sourceHash, 'status' => 'queued',
-            'asset_json' => [], 'asset_url' => '', 'error_message' => '',
-        ]);
-        return successCode(['verification' => $this->serializeFaceVerification($task)], '人脸检测已加入队列', 202);
+        abort(410, '独立人脸检测已停用，参考图将在视频生成时自动审核');
     }
 
     public function faceVerificationStream()
@@ -121,20 +80,8 @@ class QuickCreateController extends BaseController
     {
         $task = QuickCreateFaceVerification::find($taskId);
         if (!$task instanceof QuickCreateFaceVerification) return;
-        $userId = (int) $task->getAttr('user_id'); $url = trim((string) $task->getAttr('source_url'));
-        try {
-            $asset = Asset::create(['user_id' => $userId, 'series_id' => 0, 'type' => 'character', 'name' => '速创人脸-' . $taskId, 'description' => '速创上传图片人脸验证', 'tags' => ['quick_create_face'], 'is_hidden' => 1, 'sort' => 0, 'toapis_group_id' => '']);
-            $image = AssetImage::create(['user_id' => $userId, 'asset_id' => (int) $asset->getAttr('id'), 'view_type' => 'look', 'url' => $url, 'note' => '速创上传图片', 'image_prompt' => '', 'sort' => 0, 'reference_role' => 'look', 'variant_name' => '速创人脸', 'reference_key' => 'quick-create-face-' . $taskId, 'toapis_asset_id' => '', 'toapis_asset_url' => '', 'toapis_status' => 'processing', 'video_ref_url' => '']);
-            $result = (new ToapisPrivateAvatarService())->ingestLook($asset, $image, $url, $userId);
-            $payload = array_merge($result, [
-                'asset_id' => (int) $asset->getAttr('id'),
-                'asset_image_id' => (int) $image->getAttr('id'),
-                'asset_url' => (string) ($result['asset_url'] ?? ''),
-            ]);
-            $task->save(['asset_id' => $payload['asset_id'], 'asset_image_id' => $payload['asset_image_id'], 'asset_json' => $payload, 'asset_url' => $payload['asset_url'], 'status' => 'passed', 'error_message' => '', 'finished_at' => date('Y-m-d H:i:s')]);
-        } catch (\Throwable $e) {
-            $task->save(['status' => 'failed', 'error_message' => mb_substr($e->getMessage(), 0, 1800), 'finished_at' => date('Y-m-d H:i:s')]);
-        }
+        $task->save(['status' => 'failed', 'error_message' => '独立人脸检测已停用，请直接生成视频，素材将在生成时审核',
+            'finished_at' => date('Y-m-d H:i:s')]);
         RedisCache::bumpVersion('quick_create_face:' . $taskId);
     }
 
@@ -142,6 +89,33 @@ class QuickCreateController extends BaseController
     private const VIDEO_RESOLUTIONS = ['', '480p', '720p', '1080p', '768P', '2K'];
     private const IMAGE_RESOLUTIONS = ['', '1K', '2K', '4K'];
     private const IMAGE_QUALITIES = ['', 'low', 'medium', 'high', 'standard'];
+
+    public function quote()
+    {
+        $userId = $this->currentUserId();
+        $model = ModelConfigResolver::resolve('image', $userId, (int) $this->request->param('model_config_id', 0));
+        if ($model === null) abort(422, '没有可用的图片模型');
+        $options = $this->request->param('options', []);
+        $options = $this->sanitizeOptions(is_array($options) ? $options : [], 'image', $model);
+        $this->applyImageOptionsToModel($model, $options);
+        $modelId = (string) $model->getAttr('model_id');
+        $modelOptions = $model->getAttr('options') ?: [];
+        $refs = max(0, min(self::MAX_REFS, (int) $this->request->param('reference_count', 0)));
+        $modelOptions['estimated_text_tokens'] = max(1, (int) ceil(mb_strlen((string) $this->request->param('prompt', '')) / 2));
+        $amount = CreditService::quoteImage((string) ($modelOptions['quality'] ?? 'high'), $modelId, $refs, $modelOptions);
+        return successCode(['credits' => round($amount * $options['count'], 2),
+            'estimated' => ImageGenerationOptions::isOfficial25($modelId), 'count' => $options['count']]);
+    }
+
+    private function assertImageBatchAffordable(ModelConfig $model, array $options, string $prompt, array $refs, int $userId, ?int $count = null): void
+    {
+        $this->applyImageOptionsToModel($model, $options);
+        $modelOptions = $model->getAttr('options') ?: [];
+        $modelOptions['estimated_text_tokens'] = max(1, (int) ceil(mb_strlen($prompt) / 2));
+        $amount = CreditService::quoteImage((string) ($modelOptions['quality'] ?? 'high'),
+            (string) $model->getAttr('model_id'), count($this->allRefImageUrls($refs)), $modelOptions);
+        CreditService::assertAffordable($userId, $amount * ($count ?? (int) ($options['count'] ?? 1)), '生成本批图片');
+    }
 
     /**
      * 历史消息列表。
@@ -218,6 +192,10 @@ class QuickCreateController extends BaseController
             $mode,
             $model
         ), $userId);
+
+        if ($mode === 'image') {
+            $this->assertImageBatchAffordable($model, $options, $prompt, $refs, $userId);
+        }
 
         $message = QuickCreateMessage::create([
             'user_id' => $userId,
@@ -321,8 +299,10 @@ class QuickCreateController extends BaseController
             $options = [];
         }
 
-        $options = $this->bindStylePresetOption($this->sanitizeOptions($options, 'image'), $userId, false);
+        $options = $this->bindStylePresetOption($this->sanitizeOptions($options, 'image', $model), $userId, false);
         $options['count'] = 1;
+
+        $this->assertImageBatchAffordable($model, $options, $this->buildEditPrompt((string) $source->getAttr('prompt'), $instruction), $refs, $userId);
 
         $message = QuickCreateMessage::create([
             'user_id' => $userId,
@@ -420,6 +400,9 @@ class QuickCreateController extends BaseController
                 $controller = new AssetController($this->app);
                 $controller->setRuntimeUserId($userId);
                 $this->applyImageOptionsToModel($model, $options);
+                if ($resumeTaskId === '') {
+                    $this->assertImageBatchAffordable($model, $options, $prompt, $refs, $userId, $count - $startIndex);
+                }
                 for ($i = $startIndex; $i < $count; $i++) {
                     $url = $controller->callImageGeneration($model, $prompt, [
                         'source' => 'quick_create_image',
@@ -456,6 +439,7 @@ class QuickCreateController extends BaseController
                             'source' => 'quick_create_video',
                             'user_id' => $userId,
                             'quick_create_message_id' => $messageId,
+                            'idempotency_key' => 'quick-create-video-' . $messageId . '-' . $i,
                             'video_options' => $videoOptions,
                             'reference_videos' => $referenceVideoUrls,
                         ],
@@ -679,9 +663,24 @@ class QuickCreateController extends BaseController
     private function sanitizeOptions(array $options, string $mode, ?ModelConfig $model = null): array
     {
         $out = [];
+        $toapisImage = $mode === 'image' && $model !== null && ImageGenerationOptions::isToapis25((string) $model->getAttr('model_id'));
+        if ($toapisImage) {
+            $modelOptions = $model->getAttr('options') ?: [];
+            $input = array_intersect_key($options, array_flip(['size', 'aspect_ratio', 'resolution', 'quality', 'background']));
+            try {
+                $resolved = ImageGenerationOptions::resolveToapis25(array_merge($modelOptions, $input), (string) $model->getAttr('model_id'));
+            } catch (\InvalidArgumentException $error) { abort(422, $error->getMessage()); }
+            $out = $resolved;
+            $out['background'] = $resolved['background'] ?? '';
+            if (!ImageGenerationOptions::isOfficial25((string) $model->getAttr('model_id'))) {
+                $out['aspect_ratio'] = $resolved['size'];
+                unset($out['size']);
+            }
+            unset($out['n']);
+        }
 
         $aspectRatio = trim((string) ($options['aspect_ratio'] ?? ''));
-        if (in_array($aspectRatio, self::ASPECT_RATIOS, true) && $aspectRatio !== '' && $aspectRatio !== 'adaptive') {
+        if (!$toapisImage && in_array($aspectRatio, self::ASPECT_RATIOS, true) && $aspectRatio !== '' && $aspectRatio !== 'adaptive') {
             $out['aspect_ratio'] = $aspectRatio;
         }
 
@@ -689,11 +688,11 @@ class QuickCreateController extends BaseController
         $allowedResolutions = $mode === 'image'
             ? self::IMAGE_RESOLUTIONS
             : ($this->isMiniMaxVideoModel($model) ? ['', '768P', '2K'] : ['', '480p', '720p', '1080p']);
-        if ($resolution !== '' && in_array($resolution, $allowedResolutions, true)) {
+        if (!$toapisImage && $resolution !== '' && in_array($resolution, $allowedResolutions, true)) {
             $out['resolution'] = $resolution;
         }
 
-        if ($mode === 'image') {
+        if ($mode === 'image' && !$toapisImage) {
             $quality = strtolower(trim((string) ($options['quality'] ?? '')));
             if ($quality !== '' && in_array($quality, self::IMAGE_QUALITIES, true)) {
                 $out['quality'] = $quality;
@@ -781,11 +780,16 @@ class QuickCreateController extends BaseController
 
     /**
      * 用户选择的图片参数临时合并进模型 options（仅内存，不落库）。
-     * 图片模型的用户参数只在对应上游支持时写入内存 options；NewAPI 图片模型由
-     * ImageGenerationOptions 固定为 1024x1024/standard/vivid/url。
+     * 参数由对应模型校验，保留用户选择的分辨率、像素尺寸和画质。
      */
     private function applyImageOptionsToModel(ModelConfig $model, array $options): void
     {
+        if (ImageGenerationOptions::isToapis25((string) $model->getAttr('model_id'))) {
+            $current = $model->getAttr('options') ?: [];
+            $input = array_intersect_key($options, array_flip(['size', 'aspect_ratio', 'resolution', 'quality', 'background']));
+            $model->setAttr('options', array_merge($current, $input));
+            return;
+        }
         $imageOptions = [];
         $quality = strtolower(trim((string) ($options['quality'] ?? '')));
         if (in_array($quality, ['low', 'medium', 'high', 'standard'], true)) {
@@ -947,16 +951,7 @@ class QuickCreateController extends BaseController
     {
         $assets = [];
         foreach ($refs as $ref) {
-            $verification = is_array($ref['face_verification'] ?? null)
-                ? $ref['face_verification']
-                : [];
-            $verifiedAssetUrl = strtolower((string) ($verification['status'] ?? '')) === 'passed'
-                ? trim((string) ($verification['asset_url'] ?? ''))
-                : '';
-            // 已通过人脸验证的速创图片必须复用 ToAPIs asset:// 资源，避免退回原始上传图。
-            $url = $verifiedAssetUrl !== ''
-                ? $verifiedAssetUrl
-                : trim((string) ($ref['image_url'] ?? ''));
+            $url = trim((string) ($ref['image_url'] ?? ''));
             if ($url === '') {
                 continue;
             }
@@ -979,6 +974,12 @@ class QuickCreateController extends BaseController
             is_array($rawRefs) ? $rawRefs : [],
             (int) $message->getAttr('user_id')
         );
+        $status = (string) $message->getAttr('status');
+        // Queued provider polls release the worker slot, but generation has already started.
+        if ($status === 'queued' && $message->getAttr('mode') === 'image'
+            && ImageProviderTaskState::extractTaskId((string) $message->getAttr('error_message')) !== '') {
+            $status = 'running';
+        }
         return [
             'id' => (int) $message->getAttr('id'),
             'mode' => (string) $message->getAttr('mode'),
@@ -989,7 +990,7 @@ class QuickCreateController extends BaseController
             'edit_instruction' => (string) $message->getAttr('edit_instruction'),
             'asset_refs' => $refs,
             'options' => $message->getAttr('options_json') ?: [],
-            'status' => (string) $message->getAttr('status'),
+            'status' => $status,
             'result_urls' => $message->getAttr('result_urls_json') ?: [],
             'error_message' => (string) $message->getAttr('error_message'),
             'create_time' => $message->getAttr('create_time'),

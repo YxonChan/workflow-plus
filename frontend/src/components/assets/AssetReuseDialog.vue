@@ -169,7 +169,7 @@ async function submit() {
     :style="dialogStyle"
   >
     <p class="reuse-hint">
-      {{ t('复制为当前作品的独立副本，不是共用。人物可一并带走造型与音色；写实造型的真人检测不会复制，需在副本上重新检测。') }}
+      {{ t('复制为当前作品的独立副本。人物可一并带走造型与音色，参考图会在生成视频时自动审核。') }}
     </p>
 
     <div class="reuse-target">

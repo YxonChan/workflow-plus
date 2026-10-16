@@ -309,9 +309,15 @@ class ModelConfigController extends BaseController
                 : ImageGenerationOptions::DEFAULT_ENDPOINT;
             $options = array_merge(
                 ImageGenerationOptions::defaultModelOptions((string) ($payload['model_id'] ?? '')),
-                $options,
-                ['resolution' => ImageGenerationOptions::DEFAULT_RESOLUTION]
+                $options
             );
+            if (ImageGenerationOptions::isToapis25((string) $payload['model_id'])) {
+                try { $resolved = ImageGenerationOptions::resolveToapis25($options, (string) $payload['model_id']); }
+                catch (\InvalidArgumentException $error) { abort(422, $error->getMessage()); }
+                $options = array_merge($options, $resolved, ['provider' => 'toapis', 'toapis_image_schema' => 1]);
+                unset($options['style'], $options['response_format'], $options['model_version']);
+                if (ImageGenerationOptions::isOfficial25((string) $payload['model_id'])) unset($options['aspect_ratio'], $options['resolution']);
+            }
         }
 
         return [

@@ -15,7 +15,7 @@ class AuthService
     private const DEFAULT_PASSWORD = 'Aa123456';
 
     /** 提升此版本号可在发版后强制各进程重新跑一次 schema 迁移。 */
-    private const SCHEMA_VERSION = 8;
+    private const SCHEMA_VERSION = 9;
 
     private static bool $schemaReady = false;
 
@@ -633,7 +633,12 @@ SQL);
         $now = date('Y-m-d H:i:s');
         $changed = false;
 
-        $newApiKey = trim((string) env('NEWAPI_IMAGE_API_KEY', env('IMAGE_API_KEY', '')));
+        $toapisKey = trim((string) env('TOAPIS_API_KEY', ''));
+        if ($toapisKey === '') {
+            $toapisKey = trim((string) Db::name('model_configs')->where('type', 'video')
+                ->where('scope', 'global')->where('user_id', 0)->where('enabled', 1)
+                ->whereLike('endpoint', '%toapis.%')->order('is_default', 'desc')->value('api_key'));
+        }
         $rows = Db::name('model_configs')
             ->where('type', 'image')
             ->order(['scope' => 'asc', 'user_id' => 'asc', 'is_default' => 'desc', 'sort' => 'asc', 'id' => 'asc'])
@@ -645,41 +650,32 @@ SQL);
             static fn (array $row): bool => strtolower(trim((string) ($row['scope'] ?? 'global'))) === 'global'
                 && (int) ($row['user_id'] ?? 0) === 0,
         ));
-        $primary = null;
-        $secondary = null;
+        $available = [];
         foreach ($globalRows as $row) {
-            $modelId = strtolower(trim((string) ($row['model_id'] ?? '')));
-            $endpoint = strtolower(trim((string) ($row['endpoint'] ?? '')));
-            if ($modelId === 'gpt-image-2.5-flare') {
-                $primary ??= $row;
-            } elseif ($modelId === 'gpt-image-2.5-sunburst') {
-                $secondary ??= $row;
-            } elseif ($primary === null && ((int) ($row['is_default'] ?? 0) === 1 || str_contains($endpoint, 'tencentcloudapi.com'))) {
-                // Reuse the existing default row so historical references remain valid.
-                $primary = $row;
+            $available[strtolower(trim((string) ($row['model_id'] ?? '')))] ??= $row;
+            if ($toapisKey === '' && ToapisPrivateAvatarService::isToapisEndpoint((string) ($row['endpoint'] ?? ''))) {
+                $toapisKey = trim((string) ($row['api_key'] ?? ''));
             }
         }
 
-        $syncModel = static function (array $row, string $modelId, bool $isDefault) use ($newApiKey, $now, &$changed): array {
+        $syncModel = static function (array $row, string $modelId, bool $isDefault) use ($toapisKey, $now, &$changed): array {
             $currentOptions = json_decode((string) ($row['options'] ?? ''), true);
             if (!is_array($currentOptions)) {
                 $currentOptions = [];
             }
-            $options = array_merge(ImageGenerationOptions::defaultModelOptions($modelId), $currentOptions);
-            $options['provider'] = ImageGenerationOptions::DEFAULT_PROVIDER;
-            $options['model_name'] = $modelId;
-            $options['quality'] = 'standard';
-            $options['size'] = '1024x1024';
-            $options['style'] = 'vivid';
-            $options['response_format'] = 'url';
+            $migrating = ($currentOptions['toapis_image_schema'] ?? 0) !== 1;
+            $options = $migrating ? ImageGenerationOptions::defaultModelOptions($modelId) : $currentOptions;
+            $options['toapis_image_schema'] = 1;
+            $options['provider'] = 'toapis';
+            if (ImageGenerationOptions::isOfficial25($modelId)) unset($options['aspect_ratio'], $options['resolution']);
             $optionsJson = json_encode($options, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            $oldEndpoint = strtolower(trim((string) ($row['endpoint'] ?? '')));
-            $oldModelId = strtolower(trim((string) ($row['model_id'] ?? '')));
             $oldKey = trim((string) ($row['api_key'] ?? ''));
-            $apiKey = $newApiKey !== '' ? $newApiKey : (str_contains($oldEndpoint, 'my110.vip') && in_array($oldModelId, ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'], true) ? $oldKey : '');
+            $apiKey = ToapisPrivateAvatarService::isToapisEndpoint((string) ($row['endpoint'] ?? '')) && $oldKey !== '' ? $oldKey : $toapisKey;
 
             $update = [
-                'name' => $modelId === 'gpt-image-2.5-sunburst' ? 'GPT Image 2.5 Sunburst' : ImageGenerationOptions::DEFAULT_MODEL_NAME,
+                'type' => 'image',
+                'name' => 'GPT Image 2.5 ' . (str_contains($modelId, 'sunburst') ? 'Sunburst' : 'Flare')
+                    . (ImageGenerationOptions::isOfficial25($modelId) ? ' Official' : ''),
                 'model_id' => $modelId,
                 'endpoint' => ImageGenerationOptions::DEFAULT_ENDPOINT,
                 'api_key' => $apiKey,
@@ -695,7 +691,7 @@ SQL);
                 if (!is_array($oldOptions)) {
                     $oldOptions = [];
                 }
-                foreach (['name', 'model_id', 'endpoint', 'api_key', 'is_default', 'enabled'] as $key) {
+                foreach (['type', 'name', 'model_id', 'endpoint', 'api_key', 'is_default', 'enabled'] as $key) {
                     if ((string) ($row[$key] ?? '') !== (string) ($update[$key] ?? '')) {
                         $rowChanged = true;
                         break;
@@ -713,39 +709,20 @@ SQL);
             return $update;
         };
 
-        if (!is_array($primary) || (int) ($primary['id'] ?? 0) <= 0) {
-            Db::name('model_configs')
-                ->where('type', 'image')
-                ->where('scope', 'global')
-                ->where('user_id', 0)
-                ->where('is_default', 1)
-                ->update(['is_default' => 0, 'update_time' => $now]);
-            $primaryId = (int) Db::name('model_configs')->insertGetId(array_merge([
-                'user_id' => 0,
-                'scope' => 'global',
-                'type' => 'image',
-                'sort' => 0,
-                'create_time' => $now,
-            ], $syncModel([], 'gpt-image-2.5-flare', true)));
-            $primary = ['id' => $primaryId];
-            $changed = true;
-        } else {
-            $primaryId = (int) $primary['id'];
-            $syncModel($primary, 'gpt-image-2.5-flare', true);
+        $activeIds = [];
+        foreach (ImageGenerationOptions::PREFERRED_MODEL_IDS as $sort => $modelId) {
+            $row = $available[$modelId] ?? [];
+            $update = $syncModel($row, $modelId, $sort === 0);
+            $id = (int) ($row['id'] ?? 0);
+            if ($id <= 0) {
+                $id = (int) Db::name('model_configs')->insertGetId($update + [
+                    'user_id' => 0, 'scope' => 'global', 'sort' => $sort, 'create_time' => $now,
+                ]);
+                $changed = true;
+            }
+            $activeIds[] = $id;
         }
-
-        if (!is_array($secondary) || (int) ($secondary['id'] ?? 0) <= 0) {
-            Db::name('model_configs')->insert(array_merge([
-                'user_id' => 0,
-                'scope' => 'global',
-                'type' => 'image',
-                'sort' => 1,
-                'create_time' => $now,
-            ], $syncModel([], 'gpt-image-2.5-sunburst', false)));
-            $changed = true;
-        } else {
-            $syncModel($secondary, 'gpt-image-2.5-sunburst', false);
-        }
+        $primaryId = $activeIds[0];
 
         $siblingDefaults = Db::name('model_configs')
             ->where('type', 'image')
@@ -763,12 +740,14 @@ SQL);
 
         foreach ($rows as $row) {
             $id = (int) ($row['id'] ?? 0);
-            if ($id <= 0 || $id === $primaryId || ($secondary !== null && $id === (int) ($secondary['id'] ?? 0))) {
+            if ($id <= 0 || in_array($id, $activeIds, true)
+                || strtolower((string) ($row['scope'] ?? '')) !== 'global' || (int) ($row['user_id'] ?? 0) !== 0) {
                 continue;
             }
             $endpoint = strtolower(trim((string) ($row['endpoint'] ?? '')));
             $modelId = strtolower(trim((string) ($row['model_id'] ?? '')));
             $isLegacyImage = str_contains($endpoint, 'tencentcloudapi.com')
+                || str_contains($endpoint, 'my110.vip')
                 || str_contains($endpoint, 'toapis.com')
                 || str_contains($endpoint, 'toapis.xyz')
                 || in_array($modelId, ['og', 'og/image2', 'gpt-image-2', 'gpt-image-2-official'], true);

@@ -2,6 +2,24 @@ import styleRules from '@/utils/styleParameterRules.json'
 import { promptAssistantZh } from './promptAssistant'
 
 export default {
+  '文本输入': '文本输入',
+  '缓存文本输入': '缓存文本输入',
+  '图片输入': '图片输入',
+  '缓存图片输入': '缓存图片输入',
+  '图片输出': '图片输出',
+  '规格': '规格',
+  '中清': '中清',
+  '自动': '自动',
+  '复制为当前作品的独立副本。人物可一并带走造型与音色，参考图会在生成视频时自动审核。': '复制为当前作品的独立副本。人物可一并带走造型与音色，参考图会在生成视频时自动审核。',
+  '图片分辨率': '图片分辨率',
+  '图片尺寸': '图片尺寸',
+  '图片画质': '图片画质',
+  '透明背景': '透明背景',
+  '超高清': '超高清',
+  '最高画质': '最高画质',
+  '按实际用量结算': '按实际用量结算',
+  '预估 {credits} 积分，按实际用量结算': '预估 {credits} 积分，按实际用量结算',
+  '预计 {credits} 积分': '预计 {credits} 积分',
   ...promptAssistantZh,
   ...Object.fromEntries(styleRules.groups.flatMap((group) => [
     [group.label, group.label], [group.section, group.section],
