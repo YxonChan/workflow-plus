@@ -50,6 +50,21 @@ A professional AI cinematic pipeline built with ThinkPHP 8.0.
 
 Compose 会启动 Nginx、PHP-FPM、MySQL、Redis 以及全部 `*:worker` 服务。本仓库本地工作台地址为 `http://localhost:8086`（`WEB_PORT`）。前端开发服务器固定 `http://localhost:5176/admin/`，API 代理指向 `8086`。
 
+本地调试使用以下覆盖配置，直接挂载当前工作区代码和已构建的前端；保留现有数据库、运行目录和素材卷：
+
+```bash
+docker compose -p workflow-plus -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build db redis php web quick-create-worker quick-create-face-worker
+```
+
+上述命令同时启动提示词助手的基础服务、速创生成和速创参考图人脸验证 Worker；速创 Worker 与 PHP 使用当前工作区代码。其他异步媒体生成服务通过同一组 Compose 参数按需启动。`.env` 的注释使用 `#`，以兼容 Docker Compose 解析。
+
+只恢复速创生成及查看处理日志：
+
+```bash
+docker compose -p workflow-plus -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build --no-deps quick-create-worker
+docker compose -p workflow-plus -f docker-compose.yml -f docker-compose.dev.yml logs -f --tail=50 quick-create-worker
+```
+
 查看服务状态与 Worker 日志：
 
 ```bash

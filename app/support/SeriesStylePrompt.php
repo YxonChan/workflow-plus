@@ -97,8 +97,8 @@ class SeriesStylePrompt
     public static function imageStyleRule(string $visualStyle): string
     {
         return match (self::normalizeVisualStyle($visualStyle)) {
-            'anime' => '动漫二次元风格，手绘质感，色彩鲜艳，线条清晰；禁止写实摄影、真人实拍、照片级皮肤与真实镜头景深；禁止纯3D CGI。Anime style, 2D hand-drawn look, vibrant colors, clean lines; no photorealistic live-action; no pure 3D CGI.',
-            '3d' => '3D渲染风格，精细建模，电影级光影，高对比度；禁止2D动漫平涂与赛璐璐；非手机实拍照片。3D render style, high detail modeling, cinematic lighting, polished 3D look; no 2D anime cel-shading; not a phone camera photo.',
+            'anime' => '动漫二次元风格，二维绘制质感；线条、上色和材质遵循所选画法，色彩和对比度遵循作品风格；禁止写实摄影、真人实拍、照片级皮肤与真实镜头景深；禁止纯3D CGI。Anime style, 2D drawn look; linework, shading and texture follow the selected technique; no photorealistic live-action; no pure 3D CGI.',
+            '3d' => '3D渲染风格，清晰的三维造型；模型复杂度、材质、光影和对比度遵循所选风格，允许黏土、低多边形或风格化表现；禁止2D动漫平涂与赛璐璐；非真人实拍照片。3D render style; modeling, materials and lighting follow the selected technique; no 2D anime cel-shading; not a live-action photo.',
             default => '电影感真实质感，真人拍摄效果，写实画风；禁止动漫、二次元、卡通、赛璐璐、手绘插画与漫画平涂。Cinematic realistic style, live-action look, highly detailed textures; no anime, cartoon, cel-shading, or hand-drawn illustration.',
         };
     }

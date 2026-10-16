@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
+import { updatePromptVideoTiming, type PromptQuickCreateDraft, type PromptVideoTiming } from '@/utils/promptAssistantHandoff'
 import { listAssets } from '@/api/asset'
 import { listSeries } from '@/api/series'
 import { listGrouped } from '@/api/modelConfig'
@@ -26,6 +28,7 @@ import {
   pickAllowedResolution,
   videoAspectRatioOptions as resolveVideoAspectRatioOptions,
   videoResolutionOptions as resolveVideoResolutionOptions,
+  videoDurationOptions as resolveVideoDurationOptions,
 } from '@/utils/videoModelOptions'
 import { useAuthStore } from '@/stores/auth'
 import StylePresetSelect from '@/components/series/StylePresetSelect.vue'
@@ -33,6 +36,7 @@ import StylePresetSelect from '@/components/series/StylePresetSelect.vue'
 const HISTORY_PAGE_SIZE = 10
 
 const { t } = useI18n()
+const route = useRoute()
 const authStore = useAuthStore()
 
 // ── 会话状态 ─────────────────────────────────────────────────────────────────
@@ -199,6 +203,9 @@ const videoResolution = ref('480p')
 const imageResolution = ref('1K')
 const imageQuality = ref<'low' | 'medium' | 'high' | 'standard'>('medium')
 const duration = ref(5)
+const promptVideoTiming = ref<PromptVideoTiming | null>(null)
+const promptTimingDuration = ref(0)
+const timingNeedsReview = ref(false)
 const count = ref(1)
 const generateAudio = ref(false)
 
@@ -269,9 +276,8 @@ const videoAspectRatioChoices = computed(() => [
   { value: 'adaptive', label: '智能比例' },
   ...resolveVideoAspectRatioOptions(selectedVideoModel.value).map((value) => ({ value, label: value })),
 ])
-const durationOptions = computed(() => isMiniMaxVideo.value
-  ? Array.from({ length: 12 }, (_, index) => index + 4)
-  : [5, 10, 15])
+const durationOptions = computed(() => resolveVideoDurationOptions(selectedVideoModel.value))
+const durationSupported = computed(() => mode.value !== 'video' || durationOptions.value.includes(duration.value))
 const referenceAccept = computed(() => mode.value === 'video' && isMiniMaxVideo.value
   ? 'image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,.mov'
   : 'image/jpeg,image/png,image/gif,image/webp')
@@ -304,13 +310,11 @@ watch(selectedVideoModel, (model) => {
 watch(isMiniMaxVideo, (enabled, previous) => {
   if (enabled) {
     if (!['768P', '2K'].includes(videoResolution.value)) videoResolution.value = '2K'
-    duration.value = Math.max(4, Math.min(15, duration.value || 5))
     generateAudio.value = false
     return
   }
   if (previous) {
     videoResolution.value = '720p'
-    duration.value = [5, 10, 15].includes(duration.value) ? duration.value : 5
     const before = pendingRefs.value.length
     pendingRefs.value = pendingRefs.value.filter((ref) => ref.media_type !== 'video')
     if (pendingRefs.value.length !== before) {
@@ -318,6 +322,18 @@ watch(isMiniMaxVideo, (enabled, previous) => {
     }
   }
 })
+
+function onDurationChange() {
+  const timing = promptVideoTiming.value
+  if (!timing || promptTimingDuration.value === duration.value) return
+  const updated = updatePromptVideoTiming(promptText.value, timing, promptTimingDuration.value, duration.value)
+  timingNeedsReview.value = updated === null
+  if (updated === null) return
+  promptText.value = updated
+  promptTimingDuration.value = duration.value
+  void nextTick(() => { renderPromptEditor(); autoGrowTextarea() })
+  ElMessage.info(t('已同步提示词时长与分镜时间，请核对动作节奏'))
+}
 
 watch(mode, (nextMode) => {
   if (nextMode !== 'image') return
@@ -647,6 +663,60 @@ function bindLazyVideo(el: Element | null, messageId: number, resultIndex: numbe
   videoObserver?.observe(node)
 }
 
+async function restorePromptAssistantDraft() {
+  const id = String(route.query.prompt_draft || '')
+  if (!/^[a-z0-9-]{36}$/i.test(id)) return
+  const key = `prompt-assistant:draft:${id}`
+  const raw = sessionStorage.getItem(key)
+  if (!raw) return
+  try {
+    const value = JSON.parse(raw) as PromptQuickCreateDraft
+    if (!value.settings || !['image', 'video'].includes(value.settings.mode) || typeof value.prompt_body !== 'string') return
+    mode.value = value.settings.mode
+    stylePresetId.value = value.settings.style_preset_id || null
+    promptText.value = !stylePresetId.value && value.style_block ? `${value.style_block}\n\n${value.prompt_body}` : value.prompt_body
+    aspectRatio.value = value.settings.aspect_ratio || 'adaptive'
+    const models = modelGroups.value.find((group) => group.type === mode.value)?.models ?? []
+    if (models.some((model) => model.id === value.settings.target_model_id)) {
+      if (mode.value === 'video') selectedVideoModelId.value = value.settings.target_model_id
+      else selectedImageModelId.value = value.settings.target_model_id
+    }
+    if (mode.value === 'video') {
+      duration.value = Number(value.duration) || Number(value.settings.duration) || 5
+      const timing = value.timing
+      if (timing && Number.isFinite(timing.duration) && timing.duration > 0 && Array.isArray(timing.shots)
+        && timing.shots.length <= 12 && timing.shots.every((shot) => typeof shot.title === 'string' && Number.isFinite(shot.duration) && shot.duration > 0)) {
+        promptVideoTiming.value = timing
+        promptTimingDuration.value = duration.value
+      }
+    }
+    const ids = Array.isArray(value.settings.asset_ids) ? value.settings.asset_ids : []
+    if (Array.isArray(value.references)) {
+      pendingRefs.value = value.references.slice(0, MAX_PENDING_REFS).filter((reference) =>
+        typeof reference.url === 'string' && /^(\/storage\/|https?:\/\/)/i.test(reference.url)
+        && ['upload', 'asset'].includes(reference.kind)).map((reference) => ({
+          key: `prompt:${reference.kind}:${reference.id}`, kind: reference.kind, name: reference.name,
+          type: reference.kind === 'upload' ? 'upload' : reference.type || 'prop', url: reference.url, media_type: 'image' as const,
+          asset_id: reference.asset_id, asset_image_id: reference.asset_image_id,
+        }))
+      if (pendingRefs.value.length !== value.references.length) ElMessage.warning(t('部分参考素材无法填入，请重新选择'))
+    } else if (ids.length) {
+      try {
+        const library = await listAssets({ scope: 'mine' })
+        pendingRefs.value = ids.flatMap((assetId) => {
+          const asset = library.find((item) => item.id === assetId)
+          const image = asset?.images.find((item) => item.url)
+          return asset && image ? [{ key: `asset:${asset.id}:${image.id || 0}`, kind: 'asset' as const,
+            asset_id: asset.id, asset_image_id: image.id, name: asset.name, type: asset.type, url: image.url, media_type: 'image' as const }] : []
+        })
+        if (pendingRefs.value.length !== ids.length) ElMessage.warning(t('部分参考素材无法填入，请重新选择'))
+      } catch { ElMessage.warning(t('部分参考素材无法填入，请重新选择')) }
+    }
+    sessionStorage.removeItem(key)
+    ElMessage.success(t('提示词已填入速创'))
+  } catch { sessionStorage.removeItem(key) }
+}
+
 onMounted(async () => {
   loadViewPrefs()
   loadFavorites()
@@ -668,6 +738,7 @@ onMounted(async () => {
     }
     selectedImageModelId.value = defaultOf('image')
     selectedVideoModelId.value = defaultOf('video')
+    await restorePromptAssistantDraft()
     ensurePolling()
     await nextTick()
     renderPromptEditor()
@@ -1685,6 +1756,8 @@ function handleUploadDrop(event: DragEvent) {
 }
 
 function refillQuickCreateInput(message: QuickCreateMessage) {
+  promptVideoTiming.value = null
+  timingNeedsReview.value = false
   const options = message.options ?? {}
   mode.value = message.mode
   promptText.value = message.prompt ?? ''
@@ -1741,7 +1814,7 @@ function refillQuickCreateInput(message: QuickCreateMessage) {
 }
 
 // ── 发送 ─────────────────────────────────────────────────────────────────────
-const canSend = computed(() => !sending.value && !sendCooldown.value && promptText.value.trim().length > 0)
+const canSend = computed(() => !sending.value && !sendCooldown.value && durationSupported.value && promptText.value.trim().length > 0)
 
 function armSendCooldown() {
   sendCooldown.value = true
@@ -2559,6 +2632,11 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
         />
       </div>
 
+      <el-alert v-if="!durationSupported" class="qc-duration-warning" type="warning" :closable="false" show-icon
+        :title="t('当前模型不支持 {duration} 秒，请选择可用时长或切换模型', { duration })" />
+      <el-alert v-else-if="mode === 'video' && timingNeedsReview" class="qc-duration-warning" type="warning" :closable="false" show-icon
+        :title="t('时长已更改，请将提示词中的时间安排同步为 {duration} 秒', { duration })" />
+
       <div class="qc-toolbar">
         <!-- 模式切换 -->
         <el-radio-group v-model="mode" size="small">
@@ -2591,7 +2669,8 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
           <el-option v-for="opt in visibleImageQualityOptions" :key="opt.value" :value="opt.value" :label="t(opt.label)" />
         </el-select>
 
-        <el-select v-if="mode === 'video'" v-model="duration" size="small" class="qc-param qc-param-narrow">
+        <el-select v-if="mode === 'video'" v-model="duration" :aria-label="t('视频时长')" size="small" class="qc-param qc-param-narrow qc-duration-select" @change="onDurationChange">
+          <el-option v-if="!durationSupported" :value="duration" :label="`${duration}${t('秒')}`" disabled />
           <el-option v-for="opt in durationOptions" :key="opt" :value="opt" :label="`${opt}${t('秒')}`" />
         </el-select>
 
@@ -3906,6 +3985,10 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
   width: 110px;
 }
 
+.qc-duration-warning {
+  margin: 0 0 10px;
+}
+
 .qc-param-narrow {
   width: 84px;
 }
@@ -3926,6 +4009,41 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
   &:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+}
+
+@media (max-width: 680px) {
+  .qc-composer {
+    min-height: 0;
+    max-height: calc(100dvh - 90px);
+    overflow-y: auto;
+
+    > * {
+      flex-shrink: 0;
+    }
+  }
+
+  .qc-input-row {
+    flex-direction: column;
+  }
+
+  .qc-textarea-wrap {
+    flex: auto;
+    width: 100%;
+  }
+
+  .qc-upload-dropzone {
+    width: 100%;
+    height: 36px;
+
+    .qc-upload {
+      flex-direction: row;
+      gap: 6px;
+    }
+  }
+
+  .qc-upload-limit-hint {
+    margin-left: 0;
   }
 }
 </style>

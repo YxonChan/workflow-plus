@@ -704,11 +704,20 @@ class QuickCreateController extends BaseController
         $out['count'] = max(1, min(self::MAX_COUNT, $count));
 
         if ($mode === 'video') {
-            $duration = (int) ($options['duration'] ?? 0);
-            if ($duration > 0) {
-                $out['duration'] = $this->isMiniMaxVideoModel($model)
-                    ? max(4, min(15, $duration))
-                    : max(5, min(15, $duration));
+            if (array_key_exists('duration', $options)) {
+                $requested = $options['duration'];
+                $duration = is_numeric($requested) ? (float) $requested : 0;
+                $config = $model?->getAttr('options');
+                $config = is_array($config) ? $config : [];
+                $lower = $this->isMiniMaxVideoModel($model) ? 4 : 5;
+                $min = max($lower, (float) ($config['min_duration'] ?? $lower));
+                $max = min(15, (float) ($config['max_duration'] ?? 15));
+                if (!is_finite($duration) || floor($duration) !== $duration || $duration < $min || $duration > $max
+                    || (isset($config['duration_options']) && is_array($config['duration_options'])
+                        && !in_array($duration, array_map('floatval', $config['duration_options']), true))) {
+                    abort(422, '当前模型不支持所选视频时长，请调整时长或切换模型');
+                }
+                $out['duration'] = (int) $duration;
             }
             if (!$this->isMiniMaxVideoModel($model) && array_key_exists('generate_audio', $options)) {
                 $out['generate_audio'] = (bool) $options['generate_audio'];
@@ -743,9 +752,9 @@ class QuickCreateController extends BaseController
         }
 
         $preset = SeriesStylePrompt::loadOwned($stylePresetId, $userId);
-        if ($preset === null) {
+        if ($preset === null || count(SeriesStylePrompt::normalizeVisualStyles($preset['visual_styles'] ?? null)) !== 1) {
             if ($required) {
-                abort(422, '所选风格不存在');
+                abort(422, $preset === null ? '所选风格不存在' : '所选风格包含多个画风，请先选择一个主画风');
             }
             unset($options['style_preset_id'], $options['style_name']);
 

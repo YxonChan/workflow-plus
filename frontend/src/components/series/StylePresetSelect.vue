@@ -95,8 +95,10 @@ function ensureSelection() {
   if (props.modelValue == null) return
   const current = presets.value.find((item) => item.id === props.modelValue)
   if (!props.restrictVisualStyle) {
-    if (current || presets.value.length === 0) return
+    if (current && (current.visual_styles?.length || 1) === 1) return
+    if (presets.value.length === 0) return
     emit('update:modelValue', null)
+    if (current) ElMessage.info(t('原风格包含多个画风，请先在风格管理中选择一个主画风'))
     return
   }
   if (current && applies(current, props.visualStyle)) return
@@ -136,6 +138,7 @@ void reload()
           :key="item.id"
           :label="item.name"
           :value="item.id"
+          :disabled="!restrictVisualStyle && item.visual_styles?.length > 1"
         >
           <div class="style-preset-option">
             <div class="style-preset-option__head">
@@ -152,6 +155,7 @@ void reload()
           :key="item.id"
           :label="item.name"
           :value="item.id"
+          :disabled="!restrictVisualStyle && item.visual_styles?.length > 1"
         >
           <div class="style-preset-option">
             <div class="style-preset-option__head">
@@ -177,6 +181,11 @@ void reload()
 </template>
 
 <style scoped lang="scss">
+.style-preset-select {
+  width: 100%;
+  min-width: 0;
+}
+
 .style-preset-select.is-inline {
   display: flex;
   flex-wrap: wrap;

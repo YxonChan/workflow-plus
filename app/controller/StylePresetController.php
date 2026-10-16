@@ -10,6 +10,8 @@ use app\model\StylePreset;
 use app\support\RedisCache;
 use app\support\SeriesStylePrompt;
 use app\support\StylePresetDefaults;
+use app\support\StyleParameterRules;
+use InvalidArgumentException;
 use think\facade\Db;
 
 class StylePresetController extends BaseController
@@ -108,6 +110,8 @@ class StylePresetController extends BaseController
             'technique_prompt' => (string) $source->getAttr('technique_prompt'),
             'prompt' => (string) $source->getAttr('prompt'),
             'lighting_prompt' => (string) $source->getAttr('lighting_prompt'),
+            'prompt_mode' => (string) ($source->getAttr('prompt_mode') ?: 'manual'),
+            'prompt_extra' => (string) ($source->getAttr('prompt_extra') ?? ''),
             'is_system' => 0,
             'sort' => ((int) StylePreset::where('user_id', $this->currentUserId())->max('sort')) + 10,
         ]);
@@ -157,6 +161,8 @@ CREATE TABLE IF NOT EXISTS `style_presets` (
 SQL);
         self::ensureColumn('style_presets', 'visual_styles', "ALTER TABLE `style_presets` ADD COLUMN `visual_styles` json DEFAULT NULL COMMENT '适用画风 realistic/anime/3d' AFTER `summary`");
         self::ensureColumn('style_presets', 'technique_prompt', "ALTER TABLE `style_presets` ADD COLUMN `technique_prompt` mediumtext NULL COMMENT '画法提示词，人物和道具也会使用' AFTER `parameters`");
+        self::ensureColumn('style_presets', 'prompt_mode', "ALTER TABLE `style_presets` ADD COLUMN `prompt_mode` varchar(16) NOT NULL DEFAULT 'manual' COMMENT 'manual/parameters'");
+        self::ensureColumn('style_presets', 'prompt_extra', "ALTER TABLE `style_presets` ADD COLUMN `prompt_extra` mediumtext NULL COMMENT '参数模式补充描述'");
     }
 
     private static function ensureColumn(string $table, string $column, string $sql): void
@@ -180,9 +186,6 @@ SQL);
         $prompt = trim((string) ($payload['prompt'] ?? ''));
         if ($name === '') {
             abort(422, '风格名称不能为空');
-        }
-        if ($prompt === '') {
-            abort(422, '提示词不能为空');
         }
         if (mb_strlen($name) > 120) {
             abort(422, '风格名称不能超过 120 字');
@@ -210,12 +213,34 @@ SQL);
         if ($visualStyles === []) {
             abort(422, '请至少选择一个适用画风');
         }
+        if (count($visualStyles) !== 1) {
+            abort(422, '每条风格只能选择一个主画风，请拆成不同风格保存');
+        }
 
         $parameters = $this->normalizeParameters($payload['parameters'] ?? []);
-        if (!in_array('realistic', $visualStyles, true)) {
-            foreach (SeriesStylePrompt::filmParameterKeys() as $key) {
-                $parameters[$key] = [];
+        $mode = (string) ($payload['prompt_mode'] ?? 'manual');
+        if (!in_array($mode, ['manual', 'parameters'], true)) {
+            abort(422, '无效的提示词模式');
+        }
+        $extra = trim((string) ($payload['prompt_extra'] ?? ''));
+        if (mb_strlen($extra) > 8000) {
+            abort(422, '补充描述不能超过 8000 字');
+        }
+        if ($mode === 'parameters') {
+            try {
+                $prompt = StyleParameterRules::compose($parameters, $visualStyles[0]);
+                $technique = StyleParameterRules::compose($parameters, $visualStyles[0], 'technique');
+            } catch (InvalidArgumentException $error) {
+                abort(422, $error->getMessage());
             }
+            if ($prompt === '') {
+                abort(422, '请至少选择一项整片质感参数');
+            }
+            $prompt = implode("\n", array_filter([$prompt, $extra], static fn (string $part): bool => $part !== ''));
+            $lighting = '';
+        }
+        if ($prompt === '') {
+            abort(422, '提示词不能为空');
         }
 
         return [
@@ -226,6 +251,8 @@ SQL);
             'technique_prompt' => $technique,
             'prompt' => $prompt,
             'lighting_prompt' => $lighting,
+            'prompt_mode' => $mode,
+            'prompt_extra' => $extra,
         ];
     }
 
@@ -256,44 +283,7 @@ SQL);
 
     private function normalizeParameters(mixed $value): array
     {
-        if (is_string($value)) {
-            $decoded = json_decode($value, true);
-            $value = is_array($decoded) ? $decoded : [];
-        }
-        if (!is_array($value)) {
-            $value = [];
-        }
-
-        $result = [];
-        foreach (StylePresetDefaults::parameterKeys() as $key) {
-            $items = $value[$key] ?? [];
-            if (is_string($items)) {
-                $items = preg_split('/[,，、]/u', $items) ?: [];
-            }
-            if (!is_array($items)) {
-                $items = [];
-            }
-
-            $clean = [];
-            foreach ($items as $item) {
-                $text = trim((string) $item);
-                if ($text === '') {
-                    continue;
-                }
-                if (mb_strlen($text) > 80) {
-                    $text = mb_substr($text, 0, 80);
-                }
-                if (!in_array($text, $clean, true)) {
-                    $clean[] = $text;
-                }
-                if (count($clean) >= 24) {
-                    break;
-                }
-            }
-            $result[$key] = $clean;
-        }
-
-        return $result;
+        return StyleParameterRules::normalize($value);
     }
 
     private function copyName(string $name): string
@@ -320,6 +310,8 @@ SQL);
             'technique_prompt' => (string) $preset->getAttr('technique_prompt'),
             'prompt' => (string) $preset->getAttr('prompt'),
             'lighting_prompt' => (string) $preset->getAttr('lighting_prompt'),
+            'prompt_mode' => (string) ($preset->getAttr('prompt_mode') ?: 'manual'),
+            'prompt_extra' => (string) ($preset->getAttr('prompt_extra') ?? ''),
             'is_system' => (int) $preset->getAttr('is_system'),
             'sort' => (int) $preset->getAttr('sort'),
             'create_time' => $preset->getAttr('create_time'),

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
@@ -13,7 +13,18 @@ const router = useRouter()
 const appStore = useAppStore()
 const auth = useAuthStore()
 const { t } = useI18n()
-const { isRailCollapsed } = storeToRefs(appStore)
+const { isRailCollapsed: preferredRailCollapsed } = storeToRefs(appStore)
+const narrowViewport = window.matchMedia('(max-width: 760px)')
+const isNarrowViewport = ref(narrowViewport.matches)
+const compactStyleNavigation = computed(() => ['styles', 'promptAssistant', 'quickCreate'].includes(String(route.name)) && isNarrowViewport.value)
+const isRailCollapsed = computed(() => preferredRailCollapsed.value || compactStyleNavigation.value)
+
+function updateViewport(event: MediaQueryListEvent) {
+  isNarrowViewport.value = event.matches
+}
+
+onMounted(() => narrowViewport.addEventListener('change', updateViewport))
+onBeforeUnmount(() => narrowViewport.removeEventListener('change', updateViewport))
 
 /** public/brand/logo.png → served under Vite base (/admin/) */
 const brandLogoUrl = `${import.meta.env.BASE_URL}brand/logo.png`
@@ -48,6 +59,7 @@ const navItems = computed(() => {
     { name: 'series', label: t('作品'), desc: t('剧本到成片'), icon: 'Film' },
     { name: 'scriptCreation', label: t('剧本创作'), desc: t('AI 自动创作'), icon: 'EditPen' },
     { name: 'quickCreate', label: t('速创'), desc: t('对话快速生成'), icon: 'MagicStick' },
+    { name: 'promptAssistant', label: t('提示词'), desc: t('提示词助手'), icon: 'Document' },
     { name: 'styles', label: t('风格化'), desc: t('整片质感色调'), icon: 'Brush' },
     { name: 'assets', label: t('资产'), desc: t('角色场景道具'), icon: 'Picture' },
     { name: 'workflow', label: t('流程'), desc: t('模板与编排'), icon: 'Share' },
@@ -152,7 +164,7 @@ function goHome() {
         </el-tooltip>
       </div>
 
-      <button type="button" class="sidebar-toggle" @click="toggleRail" :title="isRailCollapsed ? t('展开菜单') : t('收起菜单')">
+      <button v-if="!compactStyleNavigation" type="button" class="sidebar-toggle" @click="toggleRail" :title="isRailCollapsed ? t('展开菜单') : t('收起菜单')">
         <el-icon :size="16">
           <component :is="resolveIcon(isRailCollapsed ? 'Expand' : 'Fold')" />
         </el-icon>

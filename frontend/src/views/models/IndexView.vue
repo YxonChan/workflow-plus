@@ -50,6 +50,7 @@ interface FormState {
   api_key: string
   /** 文本模型单次最大输出 token，写入 options.max_tokens */
   max_tokens: number
+  supports_vision: boolean
   /** 图片模型：画幅 */
   image_aspect: ImageAspectPreset
   /** 图片模型：清晰度 */
@@ -76,6 +77,7 @@ const form = reactive<FormState>({
   endpoint:   '',
   api_key:    '',
   max_tokens: 65536,
+  supports_vision: false,
   image_aspect: '16:9',
   image_quality: 'standard',
   video_provider: 'generic',
@@ -172,6 +174,7 @@ function openCreate(type: ModelType) {
   form.endpoint    = ''
   form.api_key     = ''
   form.max_tokens  = type === 'text' ? 65536 : 4096
+  form.supports_vision = false
   form.image_aspect = '16:9'
   form.image_quality = 'standard'
   form.video_provider = type === 'video' ? 'yinhe_async' : 'generic'
@@ -202,6 +205,7 @@ function openEdit(model: ModelConfig) {
   const opt = model.options ?? {}
   const mt = Number(opt.max_tokens ?? opt.max_completion_tokens ?? 0)
   form.max_tokens = model.type === 'text' ? (mt > 0 ? mt : 65536) : 4096
+  form.supports_vision = opt.supports_vision === true
   if (model.type === 'image') {
     form.image_aspect = parseImageAspectFromOptions(opt)
     form.image_quality = parseImageQualityFromOptions(opt)
@@ -254,6 +258,7 @@ async function saveModel() {
   const baseOptions = isCreating.value ? {} : { ...(activeModel.value?.options ?? {}) }
   if (form.type === 'text') {
     baseOptions.max_tokens = Math.max(2048, Math.min(65536, Math.round(form.max_tokens) || 65536))
+    baseOptions.supports_vision = form.supports_vision
   }
   if (form.type === 'image') {
     baseOptions.size = imageSizeFromAspect(form.image_aspect)
@@ -664,6 +669,7 @@ async function probeChannel(model: ModelConfig) {
               show-password
             />
           </el-form-item>
+          <el-form-item v-if="form.type === 'text'" :label="t('支持图片输入')"><el-switch v-model="form.supports_vision" /></el-form-item>
           <el-form-item v-if="form.type === 'text'" label="max_tokens（最大输出）">
             <template #label>
               <div class="form-label-with-icon">

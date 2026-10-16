@@ -1,0 +1,176 @@
+{
+  "groups": [
+    { "key": "rendering", "label": "画法", "section": "画法", "scope": "technique", "styles": ["anime", "3d"], "max": 1, "prefix": "画法采用", "options": [
+      { "value": "Cel Animation", "label": "赛璐璐动画", "styles": ["anime"] },
+      { "value": "Soft Painted Anime", "label": "柔涂动画", "styles": ["anime"] },
+      { "value": "Ink Wash Animation", "label": "水墨动画", "styles": ["anime"] },
+      { "value": "Retro Hand-drawn Animation", "label": "复古手绘动画", "styles": ["anime"] },
+      { "value": "Animated Feature 3D", "label": "动画电影 3D", "styles": ["3d"] },
+      { "value": "Realistic CGI", "label": "写实三维渲染", "styles": ["3d"] },
+      { "value": "Stylized 3D", "label": "风格化三维", "styles": ["3d"] },
+      { "value": "Clay Stop Motion", "label": "黏土定格", "styles": ["3d"] },
+      { "value": "Low Poly 3D", "label": "低多边形", "styles": ["3d"] }
+    ] },
+    { "key": "medium", "label": "拍摄介质", "section": "影像质地", "styles": ["realistic"], "max": 1, "prefix": "拍摄介质采用", "options": [
+      { "value": "Film", "label": "胶片" },
+      { "value": "ARRI Alexa Digital", "label": "ARRI Alexa 数字电影" },
+      { "value": "Sony Venice", "label": "Sony Venice 数字电影" },
+      { "value": "VHS Camcorder", "label": "VHS 录像带" },
+      { "value": "Three-strip Technicolor", "label": "特艺三色工艺" }
+    ] },
+    { "key": "film_stock", "label": "胶片型号", "section": "影像质地", "styles": ["realistic"], "requires": { "key": "medium", "value": "Film" }, "max": 1, "prefix": "胶片型号选用", "options": [
+      { "value": "Kodak Vision3 250D 5207", "label": "Kodak Vision3 250D · 日光清透" },
+      { "value": "Kodak Vision3 500T 5219", "label": "Kodak Vision3 500T · 夜戏暖肤色" },
+      { "value": "Kodak Vision3 50D 5203", "label": "Kodak Vision3 50D · 极细颗粒" },
+      { "value": "Kodak Portra 400", "label": "Kodak Portra 400 · 柔和肤色" },
+      { "value": "Kodak Portra 160", "label": "Kodak Portra 160 · 人像细颗粒" },
+      { "value": "Kodak Ektachrome E100", "label": "Kodak Ektachrome E100 · 青蓝反转片" },
+      { "value": "Kodachrome 64", "label": "Kodachrome 64 · 浓郁复古" },
+      { "value": "Fujifilm Eterna 500T 8573", "label": "Fujifilm Eterna 500T · 冷调青绿" },
+      { "value": "Fujifilm Pro 400H", "label": "Fujifilm Pro 400H · 清新" },
+      { "value": "CineStill 800T", "label": "CineStill 800T · 霓虹光晕" }
+    ] },
+    { "key": "format", "label": "画幅质感", "section": "影像质地", "styles": ["realistic"], "max": 1, "prefix": "画幅质感采用", "options": [
+      { "value": "35mm film", "label": "35mm 标准电影" },
+      { "value": "65mm/IMAX film", "label": "65mm / IMAX 大画幅" },
+      { "value": "16mm film", "label": "16mm 独立电影" },
+      { "value": "Super 8mm film", "label": "Super 8 家庭影像" }
+    ] },
+    { "key": "grain", "label": "颗粒强度", "section": "影像质地", "styles": ["realistic"], "max": 1, "prefix": "颗粒强度采用", "options": [
+      { "value": "Fine Grain 35mm", "label": "细颗粒" },
+      { "value": "Medium Film Grain", "label": "中等颗粒" },
+      { "value": "Heavy Film Grain", "label": "重颗粒" },
+      { "value": "Ultra-fine Digital Clean", "label": "纯净无颗粒" }
+    ] },
+    { "key": "effects", "label": "质感效果", "section": "影像质地", "styles": ["realistic"], "max": 4, "prefix": "质感效果叠加", "options": [
+      { "value": "Halation Orange", "label": "橙色光晕" },
+      { "value": "Halation Red Glow", "label": "红色光晕" },
+      { "value": "Black Pro-Mist", "label": "黑柔焦" },
+      { "value": "Bloom Highlight Glow", "label": "高光晕染" },
+      { "value": "Light Leaks Red-Orange", "label": "红橙漏光" },
+      { "value": "Anamorphic Horizontal Lens Flare", "label": "横向镜头光晕" },
+      { "value": "Soft Focus Diffusion", "label": "柔焦扩散" },
+      { "value": "Dust & Scratches", "label": "灰尘划痕" },
+      { "value": "VHS Scanlines & Noise", "label": "录像带扫描线" },
+      { "value": "Gate Weave & Flicker", "label": "片门抖动" }
+    ] },
+    { "key": "palette", "label": "主色调", "section": "色彩与光影", "max": 1, "prefix": "整体主色调采用", "options": [
+      { "value": "Teal & Orange", "label": "青橙商业" },
+      { "value": "Bleach Bypass", "label": "漂白旁路 · 低饱和高对比" },
+      { "value": "Golden Hour Warm", "label": "金色暖调" },
+      { "value": "Honey Glow", "label": "蜂蜜暖调" },
+      { "value": "Amber Warm Memory", "label": "琥珀怀旧" },
+      { "value": "Sepia Tone", "label": "棕褐怀旧" },
+      { "value": "Cold Blue Night", "label": "冷蓝" },
+      { "value": "Nordic Noir Cold", "label": "北欧冷峻" },
+      { "value": "Steel Grey Blue", "label": "钢蓝灰" },
+      { "value": "Neon Cyberpunk", "label": "品红青蓝霓虹" },
+      { "value": "Hong Kong Neon", "label": "港片霓虹" },
+      { "value": "Wes Anderson Pastel", "label": "粉彩" },
+      { "value": "Amélie Green-Red", "label": "绿红对照" },
+      { "value": "Almodóvar Red", "label": "红黄饱和" },
+      { "value": "Desaturated Grey", "label": "去饱和灰" },
+      { "value": "Muted Earth + Cool Shadow", "label": "大地色与冷阴影" },
+      { "value": "Washed-out Pastel", "label": "水洗淡彩" },
+      { "value": "Forest Green Moody", "label": "深绿" },
+      { "value": "Soft Pink Romance", "label": "柔粉" },
+      { "value": "Monochrome B&W High Contrast", "label": "高反差黑白" },
+      { "value": "Technicolor 3-strip", "label": "古典浓郁" },
+      { "value": "Documentary Natural", "label": "纪实自然" },
+      { "value": "Clean Commercial", "label": "干净商业色彩" },
+      { "value": "Pastel Cream", "label": "明亮奶油粉彩" },
+      { "value": "90s Anime", "label": "90 年代动画配色" },
+      { "value": "Soft High Saturation", "label": "柔和高饱和" },
+      { "value": "Transparent Sky Blue", "label": "透明天空蓝" },
+      { "value": "High Saturation", "label": "鲜明高饱和" },
+      { "value": "Ink and Cinnabar", "label": "水墨朱砂" },
+      { "value": "Flat Cel Color", "label": "赛璐璐色块", "styles": ["anime"] },
+      { "value": "Soft Animated Feature", "label": "柔和动画电影配色", "styles": ["3d"] },
+      { "value": "Physically Based", "label": "真实材质本色", "styles": ["3d"] },
+      { "value": "Bold Limited Palette", "label": "鲜明有限色板" },
+      { "value": "Clay Pigment", "label": "黏土颜料色", "styles": ["3d"] },
+      { "value": "Flat Facet Color", "label": "几何平涂色块", "styles": ["3d"] }
+    ] },
+    { "key": "contrast", "label": "对比强度", "section": "色彩与光影", "max": 1, "prefix": "对比强度采用", "options": [
+      { "value": "High Contrast Hard", "label": "高对比" },
+      { "value": "Medium Contrast Standard", "label": "中对比" },
+      { "value": "Low Contrast Flat", "label": "低对比" }
+    ] },
+    { "key": "blacks", "label": "黑位处理", "section": "色彩与光影", "max": 1, "prefix": "黑位处理采用", "options": [
+      { "value": "Crushed Blacks", "label": "黑位下沉" },
+      { "value": "Lifted Blacks", "label": "黑位提亮" }
+    ] },
+    { "key": "highlights", "label": "高光处理", "section": "色彩与光影", "max": 1, "prefix": "高光处理采用", "options": [
+      { "value": "Rolled-off Highlights", "label": "柔和滚落" },
+      { "value": "Crisp Highlights", "label": "清晰利落" }
+    ] },
+    { "key": "curve", "label": "明暗曲线", "section": "色彩与光影", "max": 1, "prefix": "明暗曲线采用", "options": [
+      { "value": "Filmic S-Curve", "label": "电影 S 曲线" },
+      { "value": "Soft Mid-tone Roll-off", "label": "柔和中间调" },
+      { "value": "Matte Finish Look", "label": "哑光曲线" }
+    ] },
+    { "key": "lighting", "label": "布光原则", "section": "色彩与光影", "max": 1, "prefix": "全片布光原则为", "options": [
+      { "value": "Motivated Cinematic", "label": "有动机的场景光" },
+      { "value": "Natural Available Light", "label": "自然光与现场光" },
+      { "value": "Soft Diffused Lighting", "label": "柔和漫射光" },
+      { "value": "Directional Lighting", "label": "方向性布光" },
+      { "value": "Low Key", "label": "低调光" },
+      { "value": "Soft Beauty Light", "label": "柔和广告布光" },
+      { "value": "Animated Feature Lighting", "label": "动画电影布光", "styles": ["3d"] },
+      { "value": "Graphic Cel Lighting", "label": "色块化动画光影", "styles": ["anime"] },
+      { "value": "Soft Studio Light", "label": "柔和棚拍光" }
+    ] },
+    { "key": "lens", "label": "光学风格", "section": "视觉参考", "styles": ["realistic"], "max": 1, "prefix": "光学风格采用", "options": [
+      { "value": "Anamorphic 2x Squeeze", "label": "变形宽银幕" },
+      { "value": "Vintage Spherical", "label": "复古球面" },
+      { "value": "Modern Spherical", "label": "现代球面" }
+    ] },
+    { "key": "era", "label": "影像年代", "section": "视觉参考", "styles": ["realistic"], "max": 1, "prefix": "影像年代参考", "options": [
+      { "value": "2020s Streaming Series Look", "label": "当代剧集" },
+      { "value": "2020s A24 indie", "label": "当代独立电影" },
+      { "value": "2010s Teal&Orange", "label": "2010 年代商业电影" },
+      { "value": "1970s New Hollywood", "label": "1970 年代新好莱坞" },
+      { "value": "1980s Neon Synthwave", "label": "1980 年代霓虹" },
+      { "value": "1990s Hong Kong New Wave", "label": "1990 年代香港电影" },
+      { "value": "1940s Film Noir", "label": "1940 年代黑色电影" },
+      { "value": "1950s Technicolor Musical", "label": "1950 年代特艺彩色" },
+      { "value": "70-80s Hollywood Epic", "label": "70-80 年代好莱坞史诗" }
+    ] },
+    { "key": "reference", "label": "视觉参照", "section": "视觉参考", "styles": ["realistic"], "max": 1, "prefix": "视觉参照为", "options": [
+      { "value": "Wes Anderson aesthetic", "label": "韦斯·安德森" },
+      { "value": "Jean-Pierre Jeunet whimsical", "label": "让-皮埃尔·热内" },
+      { "value": "Hirokazu Kore-eda warm", "label": "是枝裕和" },
+      { "value": "Wong Kar-wai mood", "label": "王家卫" },
+      { "value": "Roger Deakins style", "label": "罗杰·狄金斯" },
+      { "value": "Linus Sandgren style", "label": "莱纳斯·桑德格伦" },
+      { "value": "Christopher Doyle style", "label": "杜可风" },
+      { "value": "Greig Fraser style", "label": "格雷格·弗雷泽" },
+      { "value": "David Fincher tone", "label": "大卫·芬奇" },
+      { "value": "Denis Villeneuve atmosphere", "label": "丹尼斯·维伦纽瓦" },
+      { "value": "Documentary Natural", "label": "纪实自然" },
+      { "value": "Noir", "label": "黑色电影" }
+    ] },
+    { "key": "mood", "label": "主氛围", "section": "视觉参考", "max": 3, "prefix": "整体氛围为", "options": [
+      { "value": "whimsical", "label": "异想天开" }, { "value": "playful", "label": "俏皮" },
+      { "value": "joyful", "label": "喜悦" }, { "value": "romantic", "label": "浪漫" },
+      { "value": "warm", "label": "温暖" }, { "value": "lush", "label": "丰盈" },
+      { "value": "cinematic", "label": "电影感" }, { "value": "refined", "label": "考究" },
+      { "value": "hopeful", "label": "希望" }, { "value": "sweet", "label": "甜美" },
+      { "value": "nostalgic", "label": "怀旧" }, { "value": "melancholic", "label": "忧郁" },
+      { "value": "lonely", "label": "孤独" }, { "value": "eerie", "label": "诡异" },
+      { "value": "tense", "label": "紧张" }, { "value": "foreboding", "label": "不祥" },
+      { "value": "dreamy", "label": "梦幻" }, { "value": "gritty", "label": "粗粝" },
+      { "value": "epic", "label": "史诗" }, { "value": "intimate", "label": "亲密" },
+      { "value": "serene", "label": "宁静" }
+    ] }
+  ],
+  "aliases": { "High Contrast": "High Contrast Hard", "Low Contrast Soft": "Low Contrast Flat" },
+  "legacyTargets": { "era": { "Documentary Natural": "reference" } },
+  "softConflicts": [["joyful", "melancholic"], ["serene", "tense"], ["hopeful", "foreboding"]],
+  "hardConflicts": [
+    [{ "key": "palette", "value": "Monochrome B&W High Contrast" }, { "key": "contrast", "value": "Low Contrast Flat" }],
+    [{ "key": "palette", "value": "Bleach Bypass" }, { "key": "contrast", "value": "Low Contrast Flat" }],
+    [{ "key": "lens", "value": "Modern Spherical" }, { "key": "effects", "value": "Anamorphic Horizontal Lens Flare" }],
+    [{ "key": "lens", "value": "Vintage Spherical" }, { "key": "effects", "value": "Anamorphic Horizontal Lens Flare" }]
+  ]
+}

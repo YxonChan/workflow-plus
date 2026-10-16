@@ -1,0 +1,16 @@
+name: workflow-plus
+
+services:
+  php:
+    volumes:
+      - .:/var/www/html
+  quick-create-worker:
+    volumes:
+      - .:/var/www/html
+  quick-create-face-worker:
+    volumes:
+      - .:/var/www/html
+  web:
+    volumes:
+      - ./public:/var/www/html/public:ro
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro

@@ -5,7 +5,7 @@ const BASE = '/api/style-presets'
 
 export type StylePresetPayload = Pick<
   StylePreset,
-  'name' | 'summary' | 'visual_styles' | 'parameters' | 'technique_prompt' | 'prompt' | 'lighting_prompt'
+  'name' | 'summary' | 'visual_styles' | 'parameters' | 'technique_prompt' | 'prompt' | 'lighting_prompt' | 'prompt_mode' | 'prompt_extra'
 >
 
 export function listStylePresets(): Promise<StylePreset[]> {

@@ -67,6 +67,22 @@ export function videoAspectRatioOptions(model: VideoModelLike): string[] {
   return [...DEFAULT_ASPECT_RATIOS]
 }
 
+export function videoDurationOptions(model: VideoModelLike): number[] {
+  const options = model?.options ?? {}
+  // These bounds also apply in the current video adapters.
+  const lower = isMiniMaxVideoModel(model) ? 4 : 5
+  const min = Math.max(lower, Number(options.min_duration ?? lower))
+  const max = Math.min(15, Number(options.max_duration ?? 15))
+  const allowed = (value: number) => Number.isInteger(value) && value >= min && value <= max
+  if (Array.isArray(options.duration_options)) {
+    return [...new Set(options.duration_options.map(Number).filter(allowed))].sort((a, b) => a - b)
+  }
+  if (isMiniMaxVideoModel(model) || options.min_duration != null || options.max_duration != null) {
+    return Array.from({ length: 12 }, (_, index) => index + 4).filter(allowed)
+  }
+  return [5, 10, 15].filter(allowed)
+}
+
 export function pickAllowedResolution(current: string, model: VideoModelLike): string {
   const list = videoResolutionOptions(model)
   const value = String(current ?? '').trim()

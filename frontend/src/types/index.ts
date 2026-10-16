@@ -142,16 +142,9 @@ export interface StylePreset {
   name: string
   summary: string
   visual_styles: Array<'realistic' | 'anime' | '3d'>
-  parameters: {
-    medium: string[]
-    palette: string[]
-    contrast: string[]
-    lighting: string[]
-    grain: string[]
-    mood: string[]
-    lens: string[]
-    era: string[]
-  }
+  parameters: Record<string, string[]>
+  prompt_mode?: 'manual' | 'parameters'
+  prompt_extra?: string
   technique_prompt: string
   prompt: string
   lighting_prompt: string

@@ -46,6 +46,12 @@ const router = createRouter({
       meta: { titleKey: '流程编排', productionOnly: true },
     },
     {
+      path: '/prompts',
+      name: 'promptAssistant',
+      component: () => import('@/views/PromptAssistantView.vue'),
+      meta: { titleKey: '提示词助手', productionOnly: true },
+    },
+    {
       path: '/quick-create',
       name: 'quickCreate',
       component: () => import('@/views/QuickCreateView.vue'),

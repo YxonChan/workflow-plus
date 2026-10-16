@@ -10,7 +10,7 @@ class StylePresetDefaults
 {
     public static function parameterKeys(): array
     {
-        return ['medium', 'palette', 'contrast', 'lighting', 'grain', 'mood', 'lens', 'era'];
+        return array_column(StyleParameterRules::catalog()['groups'], 'key');
     }
 
     public static function official(): array
@@ -19,7 +19,7 @@ class StylePresetDefaults
             self::row('short_drama', '短剧写实', '偏竖屏短剧、人物关系和表演感。', ['realistic'], 10,
                 '短剧写实，强调人物关系、清晰表演、现实生活场景和适合短剧平台的直接叙事。',
                 '数字电影机拍摄的当代短剧质感，肤色自然，少用夸张调色。整体色调以生活中的暖中性色为主，室内钨丝灯和窗外日光并存。对比度中等，暗部保留细节，高光不溢出。光线以窗边自然光、室内实用光和柔和补光为主，人物面部清楚可读。颗粒很轻。氛围直接、贴近生活、情绪清楚。镜头以 35mm 和 50mm 为主，偶尔用 85mm 拍对视，运镜平稳，方便竖屏看清表情。',
-                ['medium' => ['ARRI Alexa Digital', '35mm film'], 'palette' => ['Golden Hour Warm'], 'contrast' => ['Medium Contrast Standard'], 'lighting' => ['Window Light Side', 'Tungsten Warm Indoor'], 'grain' => ['Fine Grain 35mm'], 'mood' => ['intimate', 'direct'], 'lens' => ['35mm Reportage', '50mm Standard Normal', '85mm Portrait Compression'], 'era' => ['2020s Streaming Series Look']]),
+                ['medium' => ['ARRI Alexa Digital'], 'palette' => ['Golden Hour Warm'], 'contrast' => ['Medium Contrast Standard'], 'lighting' => ['Window Light Side', 'Tungsten Warm Indoor'], 'grain' => ['Fine Grain 35mm'], 'mood' => ['intimate', 'direct'], 'lens' => ['35mm Reportage', '50mm Standard Normal', '85mm Portrait Compression'], 'era' => ['2020s Streaming Series Look']]),
             self::row('cinematic', '电影感写实', '更像影视剧剧照，适合短剧首帧。', ['realistic'], 20,
                 '电影感写实，使用影视剧剧照质感、自然表演、真实镜头景深和克制调色。',
                 '35mm 电影摄影质感，景深真实，主体和背景分离清楚。整体色调克制，按场景情绪选择暖调或冷调，不随意加饱和。对比度用电影 S 曲线，黑位有层次，高光柔和滚落。光线必须来自场景里的窗、灯或火，不打平的棚拍光。细颗粒，保留皮肤和布料纹理。氛围沉稳、电影感。镜头以 35mm、50mm、85mm 交替，运镜有动机。',
@@ -38,8 +38,8 @@ class StylePresetDefaults
                 ['medium' => ['Kodak Vision3 500T 5219'], 'palette' => ['Cold Blue Night'], 'contrast' => ['High Contrast', 'Crushed Blacks'], 'lighting' => ['Low Key'], 'grain' => ['Medium Film Grain'], 'mood' => ['tense', 'mysterious'], 'lens' => ['85mm Portrait Compression'], 'era' => ['Noir']]),
             self::row('period_comedy_honey', '古装甜宠轻喜剧', '蜂蜜暖光、粉彩和胶片人像肤色，适合明亮古装、甜宠和美食戏。', ['realistic'], 60,
                 '蜂蜜暖光、粉彩和胶片人像肤色，适合明亮古装、甜宠和美食戏。',
-                '35mm Anamorphic 胶片电影质感，Kodak Vision3 250D 5207 搭配 Kodak Portra 400 人像肤色，整体色调采用 Honey Glow 蜂蜜暖光、Golden Hour Warm 金色暖调、Wes Anderson Pastel 粉彩喜剧色系，辅以柔和朱红、暖橙、奶油黄、玉石绿与浅青色点缀，形成古装甜宠轻喜剧的明亮高级感。对比度采用 Medium Contrast Standard 与 Filmic S-Curve，黑位轻微抬起，暗部柔和不压死，高光自然过渡。光线以柔和日光、暖色室内光、侧窗光和叶隙光为主，局部有火光烛光和柔和高光晕。细 35mm 颗粒，轻微橙色光晕，柔化皮肤边缘。氛围轻快、甜蜜、温暖。镜头混合球面和变形宽银幕，35mm、50mm、85mm 交替，美食用特写。',
-                ['medium' => ['35mm Anamorphic', 'Kodak Vision3 250D 5207', 'Kodak Portra 400'], 'palette' => ['Honey Glow', 'Golden Hour Warm', 'Wes Anderson Pastel'], 'contrast' => ['Medium Contrast Standard', 'Filmic S-Curve', 'Lifted Blacks', 'Rolled-off Highlights'], 'lighting' => ['Soft Diffused Daylight', 'Tungsten Warm Indoor', 'Window Light Side'], 'grain' => ['Fine Grain 35mm', 'Halation Orange', 'Black Pro-Mist'], 'mood' => ['whimsical', 'playful', 'romantic', 'warm'], 'lens' => ['Anamorphic 2x Squeeze', '50mm Standard Normal', '85mm Portrait Compression'], 'era' => ['Wes Anderson aesthetic']]),
+                '35mm 变形宽银幕胶片电影质感，Kodak Vision3 250D 5207，肤色柔和自然。主色调为 Honey Glow 蜂蜜暖调，辅以柔和朱红、暖橙、奶油黄、玉石绿与浅青色点缀，形成古装甜宠轻喜剧的明亮质感。中对比与电影 S 曲线，黑位轻微抬起，暗部柔和，高光自然过渡。布光柔和，具体日光、室内光或烛光随场景决定。细颗粒，轻微橙色光晕，柔化皮肤边缘。氛围轻快、甜蜜、温暖。光学风格统一为变形宽银幕，焦距、构图和运镜按分镜决定。',
+                ['medium' => ['35mm Anamorphic', 'Kodak Vision3 250D 5207'], 'palette' => ['Honey Glow'], 'contrast' => ['Medium Contrast Standard', 'Filmic S-Curve', 'Lifted Blacks', 'Rolled-off Highlights'], 'lighting' => ['Soft Diffused Lighting'], 'grain' => ['Fine Grain 35mm', 'Halation Orange', 'Black Pro-Mist'], 'mood' => ['playful', 'romantic', 'warm'], 'lens' => ['Anamorphic 2x Squeeze'], 'era' => ['Wes Anderson aesthetic']]),
             self::row('rainy_city_night', '雨夜都市冷调', '冷蓝夜色里压着一点暖黄，适合都市夜戏、孤独和雨后街道。', ['realistic'], 70,
                 '冷蓝夜色里压着一点暖黄，适合都市夜戏、孤独和雨后街道。',
                 '胶片介质选用 Kodak Vision3 500T 5219，整体色调以冷调蓝夜搭配墨绿与深青，点缀微弱暖黄光斑。采用电影标准 S 曲线，黑位下沉，高光柔和过渡。光线以冷蓝月光为环境底光，局部使用方向性暖色点光源形成冷暖对比。画面带有中等 35mm 胶片颗粒，高光边缘有轻微红色光晕。氛围 eerie、tense、lonely、nocturnal。镜头采用 28mm 广角配合轻微手持，关键部位切换 85mm。',
@@ -47,12 +47,12 @@ class StylePresetDefaults
             self::row('widescreen_epic', '宽银幕史诗电影', '8K 宽银幕、变形镜头和 70-80 年代好莱坞史诗气质。', ['realistic'], 80,
                 '宽银幕史诗，变形镜头、大画幅和 70-80 年代好莱坞色彩。',
                 '8K IMAX 大画幅电影质感。变形宽银幕镜头，椭圆焦外，浅景深，主体分离强，带 70-80 年代好莱坞史诗片的视觉语言。光线来自场景本身：自然光、窗光、街灯、火光或霓虹，只在合理时出现。色彩按故事世界走，主色、辅色、点缀色清楚，不突然换一套颜色。物理电影镜头，按情绪选择手持、三脚架、移动或升降。',
-                ['medium' => ['65mm/IMAX film', '35mm Anamorphic'], 'palette' => ['Teal & Orange'], 'contrast' => ['Filmic S-Curve'], 'lighting' => ['Motivated Cinematic'], 'grain' => ['Fine Grain 35mm'], 'mood' => ['epic', 'cinematic'], 'lens' => ['Anamorphic 2x Squeeze'], 'era' => ['70-80s Hollywood Epic']]),
+                ['medium' => ['65mm/IMAX film'], 'palette' => ['Teal & Orange'], 'contrast' => ['Filmic S-Curve'], 'lighting' => ['Motivated Cinematic'], 'grain' => ['Fine Grain 35mm'], 'mood' => ['epic', 'cinematic'], 'lens' => ['Anamorphic 2x Squeeze'], 'era' => ['70-80s Hollywood Epic']]),
 
             self::row('showa_anime', '昭和动漫风', '复古赛璐璐、怀旧色彩。', ['anime'], 110,
                 '复古赛璐璐，线条略粗，平涂上色，手绘背景，带复古胶片颗粒感。',
                 '低饱和怀旧色彩，暗部偏青褐，高光偏暖黄。对比度中等，色块清楚。光线像老电视动画的方向光，阴影边缘硬，窗光和室内灯区分明显。氛围怀旧、略微粗糙、有年代感。',
-                '', ['palette' => ['Sepia Tone', 'Amber Warm Memory'], 'contrast' => ['Medium Contrast Standard'], 'lighting' => ['Hard Cel Shadow'], 'mood' => ['nostalgic']]),
+                '', ['palette' => ['Sepia Tone'], 'contrast' => ['Medium Contrast Standard'], 'lighting' => ['Hard Cel Shadow'], 'mood' => ['nostalgic']]),
             self::row('classic_american_cartoon', '40-50年代美式手绘卡通', '黄金时代影院动画、夸张表演、手绘背景。', ['anime'], 120,
                 '1940-1950 年代影院手绘卡通：清晰墨线、赛璐璐上色、夸张肢体和弹性形变、手绘背景、复古胶片颗粒感。借鉴黄金时代美国动画语言，但不要复刻任何既有角色、标志或受版权保护形象。',
                 '温暖的舞台式配色，高对比，主光集中在人物身上，背景略暗。光线像剧场追光，边缘干净。氛围活泼、夸张、有表演感。',
@@ -72,7 +72,7 @@ class StylePresetDefaults
             self::row('shinkai', '新海诚风', '透明天空、逆光、细腻城市背景。', ['anime'], 160,
                 '精细背景，干净线稿，空气感光晕，角色上色细腻但不写实。',
                 '高透明度天空，蓝和金的逆光，城市和云层色彩细腻。对比度中高，亮部有光晕，暗部仍透气。光线以强烈逆光、黄昏和雨后反射为主。氛围辽阔、清澈、带一点孤独。',
-                '', ['palette' => ['Transparent Sky Blue', 'Golden Hour Warm'], 'contrast' => ['Medium Contrast Standard'], 'lighting' => ['Strong Backlight'], 'mood' => ['vast', 'lonely', 'clear']]),
+                '', ['palette' => ['Transparent Sky Blue'], 'contrast' => ['Medium Contrast Standard'], 'lighting' => ['Strong Backlight'], 'mood' => ['vast', 'lonely', 'clear']]),
             self::row('modern_mobile_game', '现代手游二次元风', '精致立绘、高饱和光效、数字绘。', ['anime'], 170,
                 '精致角色设计，干净数字绘，高饱和光效，材质层次细，仍是二次元立绘而不是照片。',
                 '高饱和配色，主色鲜明，光效作为点缀。对比度偏高，亮部有发光，暗部干净。光线带数字绘的轮廓光和局部高光，不出现真实镜头景深。氛围精致、华丽、游戏立绘感。',
@@ -201,9 +201,35 @@ class StylePresetDefaults
         if (!array_intersect($visualStyles, ['anime', '3d'])) {
             $techniquePrompt = '';
         }
-        $normalized = [];
-        foreach (self::parameterKeys() as $key) {
-            $normalized[$key] = array_values($parameters[$key] ?? []);
+        $normalized = StyleParameterRules::normalize($parameters);
+        $rendering = match ($code) {
+            'showa_anime', 'classic_american_cartoon' => 'Retro Hand-drawn Animation',
+            'heisei_classic', 'cel_shaded' => 'Cel Animation',
+            'moe', 'kyoto_animation', 'shinkai', 'modern_mobile_game', 'guoman' => 'Soft Painted Anime',
+            'animated_feature' => 'Animated Feature 3D',
+            'unreal' => 'Realistic CGI',
+            'stylized_3d' => 'Stylized 3D',
+            'clay' => 'Clay Stop Motion',
+            'low_poly' => 'Low Poly 3D',
+            default => null,
+        };
+        if ($rendering !== null) {
+            $normalized['rendering'] = [$rendering];
+        }
+        // Official descriptions retain contextual shot preferences; controls only expose global parameters.
+        $groups = array_column(StyleParameterRules::catalog()['groups'], null, 'key');
+        foreach ($normalized as $key => $values) {
+            $group = $groups[$key] ?? null;
+            if ($group === null) {
+                unset($normalized[$key]);
+                continue;
+            }
+            $allowed = StyleParameterRules::applies($group, $visualStyles[0])
+                ? array_column(StyleParameterRules::options($group, $visualStyles[0]), 'value') : [];
+            $normalized[$key] = array_values(array_intersect($values, $allowed));
+        }
+        if (!in_array('Film', $normalized['medium'], true)) {
+            $normalized['film_stock'] = [];
         }
 
         return [

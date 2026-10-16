@@ -35,6 +35,17 @@ Route::group('api', function () {
     Route::post('agent/tasks/cancel', 'AgentTaskController/cancel');
 
     Route::post('model-configs/list', 'ModelConfigController/index');
+    Route::post('prompt-assistant/list', 'PromptAssistantController/index');
+    Route::post('prompt-assistant/create', 'PromptAssistantController/create');
+    Route::post('prompt-assistant/detail', 'PromptAssistantController/detail');
+    Route::post('prompt-assistant/chat', 'PromptAssistantController/chat');
+    Route::post('prompt-assistant/upload', 'PromptAssistantController/uploadReference');
+    Route::post('prompt-assistant/delete', 'PromptAssistantController/delete');
+    Route::post('prompt-assistant/save-result', 'PromptAssistantController/saveResult');
+    Route::post('prompt-assistant/skills', 'PromptAssistantController/skills');
+    Route::post('prompt-assistant/skill-detail', 'PromptAssistantController/skillDetail');
+    Route::post('prompt-assistant/validate-skill', 'PromptAssistantController/validateSkill');
+    Route::post('prompt-assistant/delete-skill', 'PromptAssistantController/deleteSkill');
     Route::post('model-configs/create', 'ModelConfigController/save');
     Route::post('model-configs/update', 'ModelConfigController/update');
     Route::post('model-configs/delete', 'ModelConfigController/delete');

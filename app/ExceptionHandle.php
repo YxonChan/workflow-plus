@@ -3,6 +3,7 @@
 namespace app;
 
 use app\support\MessageLocalizer;
+use InvalidArgumentException;
 use think\db\exception\DataNotFoundException;
 use think\db\exception\ModelNotFoundException;
 use think\exception\Handle;
@@ -65,7 +66,8 @@ class ExceptionHandle extends Handle
                 ], $status, [], ['json_encode_param' => $jsonFlags]);
             }
 
-            if ($e instanceof ValidateException) {
+            if ($e instanceof ValidateException || ($e instanceof InvalidArgumentException
+                && str_starts_with((string) $request->pathinfo(), 'api/prompt-assistant/'))) {
                 return json([
                     'code' => 422,
                     'message' => MessageLocalizer::translate($e->getMessage() ?: '参数校验失败', $request),

@@ -16,11 +16,15 @@ import {
 } from '@/api/stylePreset'
 import type { StylePreset } from '@/types'
 import {
-  FILM_STYLE_PARAMETER_KEYS,
   STYLE_PARAMETER_GROUPS,
   composeStylePrompt,
   emptyStyleParameters,
   normalizeStyleParameters,
+  parameterApplies,
+  parameterOptions,
+  styleParameterIssues,
+  styleMoodWarnings,
+  type StyleParameterGroup,
   type StyleParameters,
 } from '@/utils/stylePresetCatalog'
 import { VISUAL_STYLE_SEGMENT_OPTIONS, type VisualStyle } from '@/utils/visualStyle'
@@ -45,14 +49,84 @@ const form = reactive({
   technique_prompt: '',
   prompt: '',
   lighting_prompt: '',
+  prompt_mode: 'parameters' as 'manual' | 'parameters',
+  prompt_extra: '',
 })
 const styleFilter = ref<'all' | VisualStyle>('all')
 
-const allowsFilmParameters = computed(() => form.visual_styles.includes('realistic'))
-const visibleParameterGroups = computed(() =>
-  STYLE_PARAMETER_GROUPS.filter((group) => allowsFilmParameters.value || !FILM_STYLE_PARAMETER_KEYS.includes(group.key as typeof FILM_STYLE_PARAMETER_KEYS[number])),
-)
-const visibleParameterKeys = computed(() => visibleParameterGroups.value.map((group) => group.key))
+const mainStyle = computed(() => form.visual_styles.length === 1 ? form.visual_styles[0] : undefined)
+const parameterSections = computed(() => {
+  const groups = STYLE_PARAMETER_GROUPS.filter((group) => mainStyle.value && parameterApplies(group, mainStyle.value))
+  return [...new Set(groups.map((group) => group.section))].map((label) => ({
+    label,
+    groups: groups.filter((group) => group.section === label),
+  }))
+})
+const parameterIssues = computed(() => mainStyle.value ? styleParameterIssues(form.parameters, mainStyle.value) : [])
+const generatedPrompt = computed(() => mainStyle.value && !parameterIssues.value.length ? composeStylePrompt(form.parameters, mainStyle.value) : '')
+const generatedTechnique = computed(() => mainStyle.value && !parameterIssues.value.length ? composeStylePrompt(form.parameters, mainStyle.value, 'technique') : '')
+const effectivePrompt = computed(() => form.prompt_mode === 'manual' ? form.prompt : [generatedPrompt.value, form.prompt_extra.trim()].filter(Boolean).join('\n'))
+const moodWarnings = computed(() => styleMoodWarnings(form.parameters).map((pair) => pair.map((value) =>
+  t(STYLE_PARAMETER_GROUPS.find((group) => group.key === 'mood')!.options.find((option) => option.value === value)!.label),
+).join(' / ')).join('、'))
+const unresolvedSelections = computed(() => Object.entries(form.parameters).flatMap(([key, values]) => {
+  const group = STYLE_PARAMETER_GROUPS.find((item) => item.key === key)
+  return values.filter((value) => !group || !mainStyle.value || !parameterApplies(group, mainStyle.value)
+    || values.length > group.max
+    || !parameterOptions(group, mainStyle.value).some((option) => option.value === value)
+    || (group.requires && !form.parameters[group.requires.key]?.includes(group.requires.value)))
+    .map((value) => ({ key, value, label: group?.options.find((option) => option.value === value)?.label || value }))
+}))
+
+function parameterEnabled(group: StyleParameterGroup): boolean {
+  return !group.requires || form.parameters[group.requires.key]?.includes(group.requires.value)
+}
+
+function selectParameter(group: StyleParameterGroup, value: unknown) {
+  form.parameters[group.key] = Array.isArray(value) ? value : typeof value === 'string' && value ? [value] : []
+  if (group.key === 'medium' && !form.parameters.medium.includes('Film') && form.parameters.film_stock.length) {
+    form.parameters.film_stock = []
+    ElMessage.info(t('已清空不适用的胶片型号'))
+  }
+}
+
+async function changePromptMode(value: unknown) {
+  if (value !== 'manual' && value !== 'parameters') return
+  if (value === form.prompt_mode) return
+  if (value === 'parameters' && (form.prompt.trim() || form.technique_prompt.trim() || form.lighting_prompt.trim())) {
+    try {
+      await ElMessageBox.confirm(t('保存参数模式将使用当前参数重新生成提示词，替换原手写内容。'), t('切换编辑模式'), {
+        confirmButtonText: t('切换'), cancelButtonText: t('取消'), type: 'warning', closeOnClickModal: false,
+      })
+    } catch { return }
+  }
+  if (value === 'manual') {
+    form.prompt = effectivePrompt.value
+    form.technique_prompt = generatedTechnique.value
+  }
+  form.prompt_mode = value
+}
+
+async function changeVisualStyle(value: unknown) {
+  if (value !== 'realistic' && value !== 'anime' && value !== '3d') return
+  if (mainStyle.value === value) return
+  if (form.prompt.trim() || form.technique_prompt.trim() || form.lighting_prompt.trim() || form.prompt_extra.trim()) {
+    try {
+      await ElMessageBox.confirm(t('切换主画风会清空原有手写描述和不适用参数。'), t('切换主画风'), {
+        confirmButtonText: t('切换'), cancelButtonText: t('取消'), type: 'warning', closeOnClickModal: false,
+      })
+    } catch { return }
+  }
+  form.visual_styles = [value]
+  for (const group of STYLE_PARAMETER_GROUPS) {
+    if (!parameterApplies(group, value)) form.parameters[group.key] = []
+    else form.parameters[group.key] = form.parameters[group.key].filter((item) => parameterOptions(group, value).some((option) => option.value === item))
+  }
+  form.prompt = ''
+  form.technique_prompt = ''
+  form.lighting_prompt = ''
+  form.prompt_extra = ''
+}
 
 function matchesFilter(item: StylePreset): boolean {
   if (styleFilter.value === 'all') return true
@@ -79,10 +153,12 @@ function toggleDetail(id: number) {
 }
 
 function paletteChips(item: StylePreset): string[] {
+  if ((item.prompt_mode || 'manual') === 'manual') return []
   return normalizeStyleParameters(item.parameters).palette.slice(0, 4)
 }
 
 function filledGroups(item: StylePreset) {
+  if ((item.prompt_mode || 'manual') === 'manual') return []
   const parameters = normalizeStyleParameters(item.parameters)
   return STYLE_PARAMETER_GROUPS
     .map((group) => ({ ...group, values: parameters[group.key] }))
@@ -97,13 +173,12 @@ function resetForm() {
   form.technique_prompt = ''
   form.prompt = ''
   form.lighting_prompt = ''
+  form.prompt_mode = 'parameters'
+  form.prompt_extra = ''
 }
 
 function assignParameters(parameters: StyleParameters) {
-  const next = normalizeStyleParameters(parameters)
-  for (const group of STYLE_PARAMETER_GROUPS) {
-    form.parameters[group.key] = next[group.key]
-  }
+  form.parameters = normalizeStyleParameters(parameters)
 }
 
 function openCreate() {
@@ -121,6 +196,8 @@ function openEditor(item: StylePreset) {
   form.technique_prompt = item.technique_prompt || ''
   form.prompt = item.prompt
   form.lighting_prompt = item.lighting_prompt
+  form.prompt_mode = item.prompt_mode || 'manual'
+  form.prompt_extra = item.prompt_extra || ''
   view.value = 'editor'
 }
 
@@ -146,44 +223,18 @@ onMounted(() => {
   void loadAll()
 })
 
-async function writePromptFromParameters() {
-  const next = composeStylePrompt(form.parameters, visibleParameterKeys.value)
-  if (!next) {
-    ElMessage.warning(t('先选择至少一组参数'))
-    return
-  }
-  if (form.prompt.trim() && form.prompt.trim() !== next) {
-    try {
-      await ElMessageBox.confirm(
-        t('当前提示词会被参数重新生成的文字替换。'),
-        t('按参数写入提示词'),
-        {
-          confirmButtonText: t('替换'),
-          cancelButtonText: t('取消'),
-          type: 'warning',
-          closeOnClickModal: false,
-        },
-      )
-    } catch {
-      return
-    }
-  }
-  form.prompt = next
-}
-
 function payloadFromForm() {
   const parameters = normalizeStyleParameters(form.parameters)
-  if (!form.visual_styles.includes('realistic')) {
-    for (const key of FILM_STYLE_PARAMETER_KEYS) parameters[key] = []
-  }
   return {
     name: form.name.trim(),
     summary: form.summary.trim(),
     visual_styles: [...form.visual_styles],
     parameters,
-    technique_prompt: form.technique_prompt.trim(),
-    prompt: form.prompt.trim(),
-    lighting_prompt: form.lighting_prompt.trim(),
+    technique_prompt: form.prompt_mode === 'parameters' ? generatedTechnique.value : form.technique_prompt.trim(),
+    prompt: effectivePrompt.value.trim(),
+    lighting_prompt: form.prompt_mode === 'parameters' ? '' : form.lighting_prompt.trim(),
+    prompt_mode: form.prompt_mode,
+    prompt_extra: form.prompt_extra.trim(),
   }
 }
 
@@ -194,12 +245,20 @@ async function save() {
     ElMessage.warning(t('请填写风格名称'))
     return
   }
-  if (!payload.visual_styles.length) {
-    ElMessage.warning(t('请至少选择一个适用画风'))
+  if (payload.visual_styles.length !== 1) {
+    ElMessage.warning(t('请选择一个主画风'))
+    return
+  }
+  if (form.prompt_mode === 'parameters' && parameterIssues.value.length) {
+    ElMessage.warning(t('请处理冲突或旧版参数：{groups}', { groups: parameterIssues.value.map((label) => t(label)).join('、') }))
+    return
+  }
+  if (form.prompt_mode === 'parameters' && !generatedPrompt.value) {
+    ElMessage.warning(t('请至少选择一项整片质感参数'))
     return
   }
   if (!payload.prompt) {
-    ElMessage.warning(t('请填写整片质感提示词，或先按参数写入'))
+    ElMessage.warning(t('请填写整片质感提示词'))
     return
   }
 
@@ -286,7 +345,6 @@ function handleCommand(command: string | number | object) {
       <PageToolbar
         :kicker="t('画面质感')"
         :title="t('风格化')"
-        :subtitle="t('管理整片的色彩、介质和光影。每条风格同时保存参数和提示词。')"
       >
         <template #actions>
           <el-button type="primary" @click="openCreate">
@@ -429,13 +487,11 @@ function handleCommand(command: string | number | object) {
       <PageToolbar
         :kicker="t('画面质感')"
         :title="editingId ? t('编辑风格') : t('新建风格')"
-        :subtitle="t('保存八组参数，以及选用这条风格时带上的提示词。')"
       >
         <template #actions>
           <el-button @click="backToLibrary">
             <el-icon><ArrowLeft /></el-icon><span>{{ t('返回') }}</span>
           </el-button>
-          <el-button @click="writePromptFromParameters">{{ t('按参数写入提示词') }}</el-button>
           <el-button type="primary" :loading="saving" @click="save">{{ t('保存') }}</el-button>
         </template>
       </PageToolbar>
@@ -451,43 +507,74 @@ function handleCommand(command: string | number | object) {
               <span>{{ t('简介') }}</span>
               <el-input v-model="form.summary" maxlength="255" :placeholder="t('用一句话说明适合什么片子')" />
             </label>
-            <label class="style-field style-field--full">
-              <span>{{ t('适用画风') }}</span>
-              <el-checkbox-group v-model="form.visual_styles">
-                <el-checkbox
+            <div class="style-field style-field--full">
+              <span>{{ t('主画风') }}</span>
+              <el-radio-group :model-value="mainStyle" :aria-label="t('主画风')" @update:model-value="changeVisualStyle">
+                <el-radio
                   v-for="option in VISUAL_STYLE_SEGMENT_OPTIONS"
                   :key="option.value"
                   :value="option.value"
-                >{{ t(option.label) }}</el-checkbox>
-              </el-checkbox-group>
-            </label>
+                >{{ t(option.label) }}</el-radio>
+              </el-radio-group>
+              <el-alert v-if="!mainStyle" :title="t('旧风格包含多个画风，请选择一个主画风后保存。')" type="warning" :closable="false" />
+            </div>
+            <div class="style-field style-field--full">
+              <span>{{ t('编辑模式') }}</span>
+              <el-radio-group :model-value="form.prompt_mode" :aria-label="t('编辑模式')" @update:model-value="changePromptMode">
+                <el-radio-button value="parameters">{{ t('参数') }}</el-radio-button>
+                <el-radio-button value="manual">{{ t('手写提示词') }}</el-radio-button>
+              </el-radio-group>
+            </div>
           </div>
 
-          <section class="editor-section">
-            <h2>{{ t('参数') }}</h2>
-            <p>{{ t('从资料库选择，也可以直接输入。') }}</p>
+          <template v-if="form.prompt_mode === 'parameters'">
+          <section v-if="parameterIssues.length" class="editor-section">
+            <el-alert :title="t('请处理冲突或旧版参数：{groups}', { groups: parameterIssues.map((label) => t(label)).join('、') })" type="error" :closable="false" />
+            <div class="pending-selections">
+              <el-tag v-for="item in unresolvedSelections" :key="`${item.key}:${item.value}`" closable type="warning"
+                @close="form.parameters[item.key] = form.parameters[item.key].filter((value) => value !== item.value)">
+                {{ t(item.label) }}
+              </el-tag>
+            </div>
+          </section>
+          <section v-for="section in parameterSections" :key="section.label" class="editor-section">
+            <h2>{{ t(section.label) }}</h2>
             <div class="param-grid">
-              <label v-for="group in visibleParameterGroups" :key="group.key" class="style-field">
+              <label v-for="group in section.groups" :key="group.key" class="style-field">
                 <span>{{ t(group.label) }}</span>
                 <el-select
-                  v-model="form.parameters[group.key]"
-                  multiple
+                  :model-value="group.max === 1 ? (form.parameters[group.key].length === 1 ? form.parameters[group.key][0] : undefined) : form.parameters[group.key]"
+                  :multiple="group.max > 1"
+                  :multiple-limit="group.max > 1 ? group.max : 0"
+                  :disabled="!parameterEnabled(group)"
+                  clearable
                   filterable
-                  allow-create
-                  default-first-option
-                  :placeholder="t(group.hint)"
+                  :placeholder="t(!parameterEnabled(group) ? '先选择胶片介质' : group.max === 1 ? '不指定' : '最多选择 {count} 项', { count: group.max })"
+                  @update:model-value="selectParameter(group, $event)"
                 >
                   <el-option
-                    v-for="option in group.options"
+                    v-for="option in parameterOptions(group, mainStyle!)"
                     :key="option.value"
-                    :label="option.label"
+                    :label="t(option.label)"
                     :value="option.value"
                   />
                 </el-select>
               </label>
             </div>
           </section>
+          <el-alert v-if="moodWarnings" :title="t('氛围存在明显反差：{values}', { values: moodWarnings })" type="warning" :closable="false" />
+          <section class="editor-section">
+            <h2>{{ t('补充描述') }}</h2>
+            <el-input v-model="form.prompt_extra" type="textarea" :rows="3" maxlength="8000" show-word-limit resize="vertical" />
+          </section>
+          <section class="editor-section">
+            <h2>{{ t('提示词预览') }}</h2>
+            <p v-if="generatedTechnique" class="prompt-preview">{{ generatedTechnique }}</p>
+            <p class="prompt-preview">{{ effectivePrompt || t('尚未设置') }}</p>
+          </section>
+          </template>
 
+          <template v-else>
           <section class="editor-section">
             <h2>{{ t('画法提示词') }}</h2>
             <p>{{ t('人物、道具设定图也会使用。只写线条、上色、材质和造型比例，不写色调和光线。可以留空。') }}</p>
@@ -526,6 +613,7 @@ function handleCommand(command: string | number | object) {
               resize="vertical"
             />
           </section>
+          </template>
         </form>
       </div>
     </template>
@@ -814,6 +902,35 @@ function handleCommand(command: string | number | object) {
   }
 }
 
+.param-grid {
+  margin-top: var(--space-sm);
+}
+
+.pending-selections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+
+  :deep(.el-tag) {
+    max-width: 100%;
+    height: auto;
+    min-height: 24px;
+    white-space: normal;
+  }
+
+  :deep(.el-tag__content) {
+    overflow-wrap: anywhere;
+  }
+}
+
+.editor-section .prompt-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--body);
+  line-height: 1.7;
+}
+
 .style-field {
   display: flex;
   flex-direction: column;
@@ -843,10 +960,10 @@ function handleCommand(command: string | number | object) {
   }
 
   :deep(.el-tag) {
-    --el-tag-bg-color: #312e81;
-    --el-tag-border-color: #818cf8;
-    --el-tag-text-color: #eef2ff;
-    --el-tag-hover-color: #ffffff;
+    --el-tag-bg-color: var(--surface-elevated);
+    --el-tag-border-color: var(--hairline);
+    --el-tag-text-color: var(--body);
+    --el-tag-hover-color: var(--body-strong);
 
     height: auto !important;
     min-height: 24px;
@@ -854,9 +971,9 @@ function handleCommand(command: string | number | object) {
     margin: 2px 0;
     padding: 3px 8px !important;
     border-radius: 6px !important;
-    background: #312e81 !important;
-    border-color: #818cf8 !important;
-    color: #eef2ff !important;
+    background: var(--surface-elevated) !important;
+    border-color: var(--hairline) !important;
+    color: var(--body) !important;
     font-size: 12px !important;
     font-weight: 600 !important;
     line-height: 1.35 !important;
@@ -864,12 +981,12 @@ function handleCommand(command: string | number | object) {
 
   :deep(.el-tag__content),
   :deep(.el-select__tags-text) {
-    color: #eef2ff !important;
+    color: var(--body) !important;
     white-space: normal;
   }
 
   :deep(.el-tag__close) {
-    color: #c7d2fe !important;
+    color: var(--muted) !important;
 
     &:hover {
       background: rgba(255, 255, 255, 0.16) !important;
@@ -881,6 +998,7 @@ function handleCommand(command: string | number | object) {
 @media (max-width: 760px) {
   .style-lib__body {
     padding: var(--space-lg) var(--space-md);
+    padding-right: 52px;
   }
 
   .card-grid,
