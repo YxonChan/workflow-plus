@@ -310,6 +310,7 @@ async function refreshJwt() {
 <style scoped lang="scss">
 .dashboard {
   height: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--canvas);
@@ -331,7 +332,9 @@ async function refreshJwt() {
 
 .dashboard__body {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  overflow: auto;
   padding: var(--space-lg) var(--space-xl);
   display: flex;
   flex-direction: column;
@@ -584,7 +587,7 @@ async function refreshJwt() {
   }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1366px) {
   .dashboard__workspace {
     grid-template-columns: 1fr;
   }

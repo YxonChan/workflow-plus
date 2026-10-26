@@ -1915,6 +1915,8 @@ async function handleCancelAssetQueuedJobs(asset: Asset) {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
+  overflow: hidden;
   background: var(--canvas);
 }
 
@@ -3725,6 +3727,41 @@ async function handleCancelAssetQueuedJobs(asset: Asset) {
   top: 14px;
   right: 14px;
   z-index: 2;
+}
+
+@media (max-width: 1440px) {
+  .assets-toolbar {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: 10px 16px;
+  }
+
+  .assets-toolbar__left,
+  .assets-toolbar__right {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .assets-scope-bar {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .assets-scope-segment {
+    width: min(100%, 640px);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .core-prompt-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.72fr);
+  }
+
+  .asset-editor-dialog .studio-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 1100px) {

@@ -221,13 +221,18 @@ onMounted(load)
 <style scoped lang="scss">
 .credit-pricing-view {
   height: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--canvas);
 }
 
 .credit-pricing-view__body {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
   padding: var(--space-lg);
   display: flex;
   flex-direction: column;

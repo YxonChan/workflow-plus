@@ -174,13 +174,16 @@ onMounted(async () => {
 <style scoped lang="scss">
 .stats-view {
   height: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--canvas);
 }
 
 .stats-view__body {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   padding: var(--space-xl);
   display: flex;

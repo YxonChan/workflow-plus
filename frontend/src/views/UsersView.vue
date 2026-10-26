@@ -261,14 +261,17 @@ onMounted(load)
 <style scoped lang="scss">
 .users-view {
   height: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--canvas);
 }
 
 .users-view__body {
   flex: 1;
   padding: var(--space-lg);
+  min-width: 0;
   min-height: 0;
 }
 </style>

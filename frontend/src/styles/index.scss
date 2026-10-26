@@ -58,6 +58,11 @@ body {
   background: var(--canvas);
 }
 
+.app-workspace .el-table {
+  width: 100%;
+  max-width: 100%;
+}
+
 // ── Page header (used by workspace pages) ────────────────────────────────────
 .page-header {
   display: flex;

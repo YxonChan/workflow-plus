@@ -481,7 +481,7 @@ onBeforeUnmount(() => { ++loadSequence; if (pollTimer) clearInterval(pollTimer) 
 </template>
 
 <style scoped lang="scss">
-.prompt-page { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.prompt-page { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .prompt-workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr) 370px; }
 .session-sidebar, .result-area { background: var(--surface-soft); min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .session-sidebar { border-right: 1px solid var(--hairline); }
@@ -577,7 +577,8 @@ onBeforeUnmount(() => { ++loadSequence; if (pollTimer) clearInterval(pollTimer) 
 .settings-grid :deep(.el-input-number) { width: 100%; }
 .mobile-view-switch, .history-command { display: none; }
 button:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
-@media (max-width: 1280px) { .session-sidebar { display: none; } .prompt-workspace { grid-template-columns: minmax(0, 1fr) 340px; } .history-command { display: inline-flex; } }
+@media (max-width: 1440px) { .prompt-workspace { grid-template-columns: minmax(160px, 190px) minmax(0, 1fr) minmax(220px, 280px); } }
+@media (max-width: 1280px) { .session-sidebar { display: none; } .prompt-workspace { grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); } .history-command { display: inline-flex; } }
 @media (max-width: 980px) {
   .prompt-workspace { display: flex; }
   .conversation-area, .result-area { flex: 1; }

@@ -515,7 +515,15 @@ async function restoreProject() {
 
 watch(locationProjectId, () => { if (pageReady) void restoreProject() })
 
+const compactListQuery = window.matchMedia('(max-width: 1500px)')
+const compactProjectList = ref(compactListQuery.matches)
+
+function syncCompactProjectList(event: MediaQueryListEvent) {
+  compactProjectList.value = event.matches
+}
+
 onMounted(async () => {
+  compactListQuery.addEventListener('change', syncCompactProjectList)
   await loadBootstrap()
   await restoreProject()
   pageReady = true
@@ -527,6 +535,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  compactListQuery.removeEventListener('change', syncCompactProjectList)
   if (pollTimer) clearInterval(pollTimer)
 })
 </script>
@@ -554,20 +563,24 @@ onBeforeUnmount(() => {
         </div>
 
         <el-table v-loading="loading" :data="projects" row-key="id" class="records-table" @row-dblclick="(row) => openProject(row.id)">
-          <el-table-column prop="title" :label="t('剧本项目')" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="genre" :label="t('题材')" width="130"><template #default="{ row }">{{ row.genre || '--' }}</template></el-table-column>
-          <el-table-column :label="t('当前步骤')" width="150"><template #default="{ row }">{{ stepName(row.current_step) }}</template></el-table-column>
-          <el-table-column :label="t('当前 AI')" width="150"><template #default="{ row }">{{ agentName(row.current_step?.agent_name) }}</template></el-table-column>
-          <el-table-column :label="t('流程状态')" width="130">
+          <el-table-column prop="title" :label="t('剧本项目')" :min-width="compactProjectList ? 148 : 220" show-overflow-tooltip />
+          <el-table-column prop="genre" :label="t('题材')" :width="compactProjectList ? 96 : 130"><template #default="{ row }">{{ row.genre || '--' }}</template></el-table-column>
+          <el-table-column :label="t('当前步骤')" :width="compactProjectList ? 112 : 150"><template #default="{ row }">{{ stepName(row.current_step) }}</template></el-table-column>
+          <el-table-column :label="t('当前 AI')" :width="compactProjectList ? 108 : 150"><template #default="{ row }">{{ agentName(row.current_step?.agent_name) }}</template></el-table-column>
+          <el-table-column :label="t('流程状态')" :width="compactProjectList ? 108 : 130">
             <template #default="{ row }"><StatusBadge :tone="projectTone(row.status)" :pulse="activeStatuses.includes(row.status)">{{ t(projectStatusLabels[row.status]) }}</StatusBadge></template>
           </el-table-column>
-          <el-table-column :label="t('最新评分')" width="110" align="center">
+          <el-table-column :label="t('最新评分')" :width="compactProjectList ? 88 : 110" align="center">
             <template #default="{ row }"><strong v-if="row.latest_score" class="table-score">{{ row.latest_score.overall_score.toFixed(1) }}</strong><span v-else>--</span></template>
           </el-table-column>
-          <el-table-column :label="t('进度')" width="110"><template #default="{ row }">{{ row.progress_completed }}/{{ row.progress_total }}</template></el-table-column>
-          <el-table-column :label="t('正在等待')" min-width="240" show-overflow-tooltip><template #default="{ row }">{{ projectWaitingText(row) }}</template></el-table-column>
-          <el-table-column prop="update_time" :label="t('更新时间')" width="180" />
-          <el-table-column :label="t('操作')" width="100" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openProject(row.id)">{{ t('打开') }}</el-button></template></el-table-column>
+          <el-table-column :label="t('进度')" :width="compactProjectList ? 72 : 110"><template #default="{ row }">{{ row.progress_completed }}/{{ row.progress_total }}</template></el-table-column>
+          <el-table-column v-if="!compactProjectList" :label="t('正在等待')" min-width="240" show-overflow-tooltip><template #default="{ row }">{{ projectWaitingText(row) }}</template></el-table-column>
+          <el-table-column v-if="!compactProjectList" prop="update_time" :label="t('更新时间')" width="180" />
+          <el-table-column :label="t('操作')" width="108" align="center" class-name="project-actions" label-class-name="project-actions">
+            <template #default="{ row }">
+              <el-button size="small" type="primary" @click="openProject(row.id)">{{ t('打开') }}</el-button>
+            </template>
+          </el-table-column>
           <template #empty><EmptyState :title="t('暂无剧本项目')" :hint="t('先配置各角色 AI，再创建项目并启动自动创作流程。')" /></template>
         </el-table>
       </div>
@@ -834,18 +847,28 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped lang="scss">
-.script-creation { height: 100%; display: flex; flex-direction: column; background: var(--canvas); }
-.script-list { flex: 1; min-height: 0; padding: var(--space-xl); }
+.script-creation { height: 100%; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--canvas); }
+.script-list { flex: 1; min-width: 0; min-height: 0; padding: var(--space-xl); }
 .panel-surface { min-width: 0; min-height: 0; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--surface-card); overflow: hidden; }
-.records-table { border: 1px solid var(--hairline); border-radius: var(--radius-md); }
+.records-table { width: 100%; max-width: 100%; border: 1px solid var(--hairline); border-radius: var(--radius-md); }
+.records-table :deep(.project-actions .cell) {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+.records-table :deep(.project-actions .el-button) {
+  height: 28px;
+  min-width: 64px;
+  padding: 0 12px;
+}
 .records-table :deep(.el-table__empty-text) { width: 100%; max-width: none; }
 .records-table :deep(.studio-empty) { width: 100%; box-sizing: border-box; }
 .table-score { color: var(--accent-cyan); font-size: 15px; }
-.flow-intro { margin-bottom: var(--space-md); padding: var(--space-md) var(--space-lg); display: flex; align-items: center; gap: var(--space-md); }
+.flow-intro { margin-bottom: var(--space-md); padding: var(--space-md) var(--space-lg); display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-md); min-width: 0; }
 .flow-intro__icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: var(--radius-md); background: var(--surface-tint); color: var(--accent-cyan); font-size: 20px; }
-.flow-intro > div:nth-child(2) { flex: 1; }
+.flow-intro > div:nth-child(2) { flex: 1; min-width: min(100%, 240px); }
 .flow-intro strong { color: var(--on-dark); }
-.flow-intro p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.flow-intro p { margin: 3px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .toolbar-progress { color: var(--muted); font-size: 12px; font-weight: 700; }
 .script-workbench { flex: 1; min-height: 0; display: grid; grid-template-columns: 270px minmax(440px, 1fr) 330px; gap: var(--space-md); padding: var(--space-md); overflow: hidden; }
 .flow-panel, .runtime-panel { overflow-y: auto; }
@@ -945,6 +968,9 @@ onBeforeUnmount(() => {
 .agent-config.is-disabled { opacity: 0.68; }
 .override-row { margin-bottom: var(--space-md); display: flex; align-items: center; justify-content: space-between; color: var(--body); font-size: 12px; }
 .placeholder-help { margin: -8px 0 0; color: var(--muted); font-size: 11px; }
+@media (max-width: 1440px) {
+  .script-list { padding: 16px; }
+}
 @media (max-width: 1366px) { .script-workbench { grid-template-columns: minmax(168px, 210px) minmax(0, 1fr) minmax(200px, 260px); gap: 12px; padding: 12px; } }
 @media (max-width: 1180px) { .config-fields { grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(160px, 0.55fr)); } }
 @media (max-width: 980px) { .script-workbench { overflow-y: auto; grid-template-columns: 1fr; } .flow-panel, .runtime-panel, .output-panel { min-height: 420px; } .agent-config-grid, .config-fields { grid-template-columns: 1fr; } }

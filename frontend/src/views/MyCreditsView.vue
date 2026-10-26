@@ -220,13 +220,16 @@ watch(() => appStore.rechargeRevision, () => {
 <style scoped lang="scss">
 .my-credits-view {
   height: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--canvas);
 }
 
 .my-credits-view__body {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   padding: var(--space-xl);
   display: flex;
@@ -313,6 +316,12 @@ watch(() => appStore.rechargeRevision, () => {
   .stat-tile strong { font-size: 20px; overflow-wrap: anywhere; }
   .stat-tile--primary strong { font-size: 24px; }
   .credits-pager { overflow-x: auto; justify-content: flex-start; }
+}
+
+@media (max-width: 1366px) {
+  .stats-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1100px) {

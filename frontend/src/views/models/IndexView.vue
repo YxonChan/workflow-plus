@@ -877,6 +877,8 @@ $color-voice: #cc00ff;
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
+  overflow: hidden;
   background: var(--canvas);
 }
 
@@ -891,8 +893,9 @@ $color-voice: #cc00ff;
 
 .models-page__body {
   flex: 1;
+  min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  overflow: auto;
   padding: var(--space-xl) var(--space-lg);
 }
 

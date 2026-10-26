@@ -317,6 +317,7 @@ onMounted(async () => {
 <style scoped lang="scss">
 .logs-view {
   height: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--canvas);
@@ -324,6 +325,7 @@ onMounted(async () => {
 }
 
 .logs-view__body {
+  min-width: 0;
   flex: 1;
   min-height: 0;
   padding: var(--space-xl);

@@ -26,7 +26,9 @@ defineProps<{
 .page-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-lg);
+  flex-wrap: wrap;
+  gap: 10px var(--space-lg);
+  min-width: 0;
   min-height: 68px;
   padding: var(--space-md) var(--space-xl);
   border-bottom: 1px solid var(--hairline);
@@ -56,6 +58,9 @@ h1 {
   font-weight: 800;
   letter-spacing: 0;
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 p {
@@ -63,14 +68,40 @@ p {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .page-toolbar__meta,
 .page-toolbar__actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-sm);
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page-toolbar__actions {
+  justify-content: flex-end;
+}
+
+.page-toolbar__actions :deep(.el-button) {
+  margin-left: 0;
+}
+
+@media (max-width: 1366px) {
+  .page-toolbar {
+    gap: 10px 12px;
+    padding: 12px 16px;
+  }
+
+  h1 {
+    font-size: 18px;
+    white-space: normal;
+  }
 }
 
 @media (max-width: 760px) {
