@@ -10,6 +10,7 @@ use app\support\PromptAssistantResponseException;
 use app\support\PromptAssistantReferences;
 use app\support\PromptAssistantService;
 use app\support\PromptAssistantTextClient;
+use app\support\PromptSkillCatalog;
 use think\facade\Db;
 
 $count = 0;
@@ -63,6 +64,10 @@ function promptRoute(think\App $app, string $action, array $payload = [], array 
     return $dispatch->run();
 }
 
+$builtinCount = count(PromptSkillCatalog::builtins());
+check($builtinCount === 12, 'shared built-in catalog includes six specialized product methods');
+$studioSkill = array_column(PromptSkillCatalog::builtins(), null, 'id')['builtin:product-studio-image'];
+check($studioSkill['license'] === 'MIT-0' && str_contains($studioSkill['source_url'], 'beatra-ai/ai-product-photography-skill'), 'shared catalog preserves per-skill license and pinned provenance');
 $settings = PromptAssistantPolicy::settings(['mode' => 'image', 'text_model_id' => 1]);
 check($settings['visual_style'] === 'realistic', 'settings normalize with a single primary style');
 check($settings['duration_confirmed'] === false, 'default duration is not treated as a user confirmation');
@@ -235,15 +240,15 @@ try {
     $created = $service->turn(1, $session['id'], 'Special scene', 'request-candidate001', $settings);
     $candidateId = $created['results'][0]['content']['candidate_skill_id'];
     check($service->skill(1, $candidateId)['status'] === 'draft', 'new method saved as a private candidate');
-    check(count($service->skills(2)) === 6, 'candidate not visible to another user');
-    check(count($service->skills(1, false)) === 6, 'unvalidated candidates excluded from automatic matching');
+    check(count($service->skills(2)) === $builtinCount, 'candidate not visible to another user');
+    check(count($service->skills(1, false)) === $builtinCount, 'unvalidated candidates excluded from automatic matching');
     rejects(fn () => $service->skill(2, $candidateId), 'foreign skill cannot be opened');
     $client->responses = [['output' => 'Baseline one'], ['output' => 'Improved one'], ['output' => 'Baseline two'], ['output' => 'Improved two'],
         ['passed' => true, 'evidence' => ['The method preserves the factual constraints in both cases.'], 'issues' => []]];
     $validated = $service->validateSkill(1, $candidateId, 1);
     check($validated['status'] === 'ready' && count($validated['evaluations']['outputs']) === 2, 'comparative evaluation enables the private method');
-    check(count($service->skills(1, false)) === 7, 'validated method available for future matching');
-    check(count($service->skills(2, false)) === 6, 'validated private methods stay outside another user matching catalog');
+    check(count($service->skills(1, false)) === $builtinCount + 1, 'validated method available for future matching');
+    check(count($service->skills(2, false)) === $builtinCount, 'validated private methods stay outside another user matching catalog');
     rejects(fn () => PromptAssistantPolicy::plan(array_replace($plan, ['skill_ids' => [$candidateId]]), $service->skills(2, false), 'image'),
         'another user cannot select a validated private method by its ID');
     rejects(fn () => $service->skill(2, $candidateId), 'validated private methods cannot be opened by another user');

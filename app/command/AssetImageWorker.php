@@ -98,7 +98,10 @@ class AssetImageWorker extends Command
             return null;
         }
 
+        $generationLock = false;
         try {
+            $generationLock = \app\support\GenerationQueueLock::acquire();
+            if (!$generationLock) return null;
             return Db::transaction(function () use ($maxConcurrency, $pollInterval): ?AssetImageJob {
                 $pollDueAt = date('Y-m-d H:i:s', time() - $pollInterval);
                 $waiting = AssetImageJob::where('status', ImageJobStatus::WAITING)
@@ -115,6 +118,7 @@ class AssetImageWorker extends Command
                 }
 
                 $inFlight = (int) AssetImageJob::whereIn('status', ImageJobStatus::inFlight())->lock(true)->count();
+                $inFlight += \app\support\GenerationQueueLock::ecommerceInFlight('image');
                 if ($inFlight >= $maxConcurrency) {
                     return null;
                 }
@@ -139,6 +143,7 @@ class AssetImageWorker extends Command
                 return $queued;
             });
         } finally {
+            if ($generationLock) \app\support\GenerationQueueLock::release();
             if ($queueLockToken !== null) {
                 RedisCache::releaseLock($queueLockKey, $queueLockToken);
             }

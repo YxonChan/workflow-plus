@@ -113,9 +113,13 @@ class VideoJobWorker extends Command
             return null;
         }
 
+        $generationLock = false;
         try {
+            $generationLock = \app\support\GenerationQueueLock::acquire();
+            if (!$generationLock) return null;
             if ($maxGlobalConcurrency > 0) {
                 $runningCount = (int) VideoJob::where('status', 'running')->count();
+                $runningCount += \app\support\GenerationQueueLock::ecommerceInFlight('video');
                 if ($runningCount >= $maxGlobalConcurrency) {
                     return null;
                 }
@@ -124,6 +128,7 @@ class VideoJobWorker extends Command
             return Db::transaction(function () use ($perUserConcurrency, $maxGlobalConcurrency): ?VideoJob {
                 if ($maxGlobalConcurrency > 0) {
                     $runningCount = (int) VideoJob::where('status', 'running')->lock(true)->count();
+                    $runningCount += \app\support\GenerationQueueLock::ecommerceInFlight('video');
                     if ($runningCount >= $maxGlobalConcurrency) {
                         return null;
                     }
@@ -159,6 +164,7 @@ class VideoJobWorker extends Command
                 return $job;
             });
         } finally {
+            if ($generationLock) \app\support\GenerationQueueLock::release();
             if ($queueLockToken !== null) {
                 RedisCache::releaseLock($queueLockKey, $queueLockToken);
             }

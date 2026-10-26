@@ -129,7 +129,11 @@ function copyCover(url: string | null, event: Event) {
 
 .gallery__body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-xl) var(--space-xl); }
 .grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: var(--space-lg);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(232px, 100%), 1fr)); gap: var(--space-lg);
+}
+
+@container works (max-width: 720px) {
+  .gallery__body { padding: var(--space-md); }
 }
 
 .cover-copy-btn {

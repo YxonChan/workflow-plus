@@ -1,0 +1,27 @@
+{
+  "purposes": [
+    { "id": "main", "label": "商品主图", "count": 1, "icon": "Picture", "defaultStyleId": "bold-color", "pageIds": ["M1"] },
+    { "id": "hero", "label": "商品套图", "count": 5, "icon": "Files", "defaultStyleId": "monochrome", "legacy": true, "pageIds": ["H1", "H2", "H3", "H4", "H5"] },
+    { "id": "detail", "label": "商品详情图", "count": 1, "icon": "Document", "defaultStyleId": "clean-studio", "pageIds": ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9"] },
+    { "id": "full", "label": "主图与详情", "count": 12, "icon": "Files", "defaultStyleId": "natural", "legacy": true, "pageIds": ["H1", "H2", "H3", "H4", "H5", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9"] },
+    { "id": "poster", "label": "宣传海报", "count": 1, "icon": "PictureFilled", "defaultStyleId": "sport", "pageIds": [] },
+    { "id": "tryon", "label": "模特试穿", "count": 1, "icon": "User", "defaultStyleId": "tryon-studio", "pageIds": [] }
+  ],
+  "styles": {
+    "clean-studio": { "purposes": ["detail", "full"], "detailLayout": "银灰科技模块详情：上部完整商品大图与简短标题，下部按参考图的网格组合局部细节、商品信息和使用展示；所有模块在同一张图内对齐。" },
+    "editorial": { "purposes": ["hero", "detail", "full"], "detailLayout": "叙事画报详情：在同一画布内按照参考图的多栏网格排列主体、场景和可见细节，图像与简短文字交替，保持画报式节奏与清楚留白。" },
+    "natural": { "purposes": ["hero", "detail", "full"], "detailLayout": "绿白清新详情：上部商品主视觉，中部商品亮点与可见细节，下部实际使用场景和已知信息，沿用参考图的绿白分区与相对大小，共同组成一张完整详情图。" },
+    "technology": { "purposes": ["detail", "full"], "detailLayout": "冷白科技详情：用参考图的蓝白模块、主体大图、局部小窗和信息区，在一张图内建立清楚的信息层级。" },
+    "dark-premium": { "purposes": ["detail", "full"], "detailLayout": "质感 A+ 详情：按参考图的深浅区块关系，在同一张图内组合商品主视觉、实际使用、可见细节及已知信息，保持模块化网格和清楚字级。" },
+    "warm-living": { "purposes": ["main", "poster"] },
+    "bold-color": { "purposes": ["main"], "whiteBackground": true },
+    "sport": { "purposes": ["main", "poster"] },
+    "craft": { "purposes": ["detail", "full"], "detailLayout": "暖调品牌详情：商品大图、细节拼版与生活场景在同一张图内按参考网格交替排布，留出相应的标题与商品信息区域。" },
+    "beauty": { "purposes": ["hero", "detail", "full"], "detailLayout": "品牌画册详情：复现参考图的双栏与上下模块结构。上部一侧为商品大图，另一侧为已指定人物或商品生活场景；中部为同一商品的可见细节小图，下部为商品陈列与已确认信息。所有区块共同组成一张完整的品牌详情图。没有人物参考时用商品场景替代肖像，不照搬模板人物。" },
+    "home": { "purposes": ["main", "poster"] },
+    "monochrome": { "purposes": ["hero", "detail", "full"], "detailLayout": "跨境商品详情：沿用参考图的炭黑、银灰与暖橙强调色以及信息网格，在同一画布内组织商品主视觉、特点展示、可见细节和使用场景；不生成示例中的推广封面、操作说明或套图宣传缩略图。" },
+    "tryon-studio": { "purposes": ["tryon"] },
+    "tryon-street": { "purposes": ["tryon"] },
+    "tryon-living": { "purposes": ["tryon"] }
+  }
+}

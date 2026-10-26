@@ -1,5 +1,15 @@
 import type { Component } from 'vue'
 import {
+  Aim,
+  CircleCheckFilled,
+  Clock,
+  Close,
+  FullScreen,
+  Goods,
+  RefreshLeft,
+  RefreshRight,
+  Upload,
+  Warning,
   ArrowLeft,
   ArrowRight,
   Bottom,
@@ -34,6 +44,7 @@ import {
   Loading,
   Lock,
   MagicStick,
+  Microphone,
   Menu,
   Monitor,
   MoreFilled,
@@ -61,6 +72,16 @@ import {
 } from '@element-plus/icons-vue'
 
 const iconRegistry: Record<string, Component> = {
+  Aim,
+  CircleCheckFilled,
+  Clock,
+  Close,
+  FullScreen,
+  Goods,
+  RefreshLeft,
+  RefreshRight,
+  Upload,
+  Warning,
   ArrowLeft,
   ArrowRight,
   Bottom,
@@ -95,6 +116,7 @@ const iconRegistry: Record<string, Component> = {
   Loading,
   Lock,
   MagicStick,
+  Microphone,
   Menu,
   Monitor,
   MoreFilled,

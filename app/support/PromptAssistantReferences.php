@@ -100,7 +100,7 @@ class PromptAssistantReferences
         return $references;
     }
 
-    public static function modelImages(array $references): array
+    public static function modelImages(array $references, int $maxPixels = 12000000): array
     {
         $images = [];
         foreach ($references as $reference) {
@@ -121,7 +121,7 @@ class PromptAssistantReferences
                 if (!$info || !in_array($info['mime'] ?? '', ['image/jpeg', 'image/png', 'image/webp'], true)) {
                     throw new InvalidArgumentException('参考图格式不支持，请使用 JPG、PNG 或 WebP');
                 }
-                $images[] = self::inlinePreview($file, $info);
+                $images[] = self::inlinePreview($file, $info, $maxPixels);
             } elseif (preg_match('#^https://#i', $url)) {
                 // Only stored, owner-checked asset URLs reach here; never fetch a user-supplied URL.
                 $images[] = $url;
@@ -132,9 +132,9 @@ class PromptAssistantReferences
         return $images;
     }
 
-    private static function inlinePreview(string $file, array $info): string
+    private static function inlinePreview(string $file, array $info, int $maxPixels = 12000000): string
     {
-        if ($info[0] * $info[1] > 12000000 || !function_exists('imagecreatefromstring')) {
+        if ($info[0] * $info[1] > min(16000000, $maxPixels) || !function_exists('imagecreatefromstring')) {
             throw new InvalidArgumentException('图片无法解析，请缩小图片或联系管理员检查图像处理配置');
         }
         $source = @imagecreatefromstring(file_get_contents($file));

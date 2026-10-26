@@ -58,6 +58,12 @@ const router = createRouter({
       meta: { titleKey: '灵感速创', productionOnly: true },
     },
     {
+      path: '/ecommerce-box',
+      name: 'ecommerceBox',
+      component: () => import('@/views/EcommerceBoxView.vue'),
+      meta: { titleKey: '电商宝盒', productionOnly: true },
+    },
+    {
       path: '/script-creation',
       name: 'scriptCreation',
       component: () => import('@/views/ScriptCreationView.vue'),

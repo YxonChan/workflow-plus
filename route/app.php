@@ -175,6 +175,23 @@ Route::group('api', function () {
     Route::post('episodes/delete', 'SeriesController/deleteEpisode');
 
     // 灵感速创（对话式快速生成）
+    Route::post('ecommerce/projects/list', 'EcommerceController/index');
+    Route::post('ecommerce/projects/create', 'EcommerceController/create');
+    Route::post('ecommerce/projects/detail', 'EcommerceController/detail');
+    Route::post('ecommerce/projects/save', 'EcommerceController/save');
+    Route::post('ecommerce/projects/delete', 'EcommerceController/delete');
+    Route::post('ecommerce/upload', 'EcommerceController/upload');
+    Route::post('ecommerce/use-asset', 'EcommerceController/useAsset');
+    Route::post('ecommerce/quote', 'EcommerceController/quote');
+    Route::post('ecommerce/expand-story', 'EcommerceController/expandStory');
+    Route::post('ecommerce/draft-copy', 'EcommerceController/draftCopy');
+    Route::post('ecommerce/brief', 'EcommerceController/brief');
+    Route::post('ecommerce/brief-turn', 'EcommerceController/briefTurn');
+    Route::post('ecommerce/generate', 'EcommerceController/generate');
+    Route::post('ecommerce/control', 'EcommerceController/control');
+    Route::post('ecommerce/check-original', 'EcommerceController/checkOriginal');
+    Route::post('ecommerce/save-asset', 'EcommerceController/saveAsset');
+
     Route::post('quick-create/messages/list', 'QuickCreateController/index');
     Route::post('quick-create/messages/send', 'QuickCreateController/send');
     Route::post('quick-create/messages/edit', 'QuickCreateController/edit');

@@ -27,6 +27,7 @@ x-php-app: &php-app
 
 x-worker: &worker
   <<: *php-app
+  user: www-data
   restart: unless-stopped
   depends_on:
     redis:
@@ -103,6 +104,9 @@ services:
   quick-create-worker:
     <<: *worker
     command: ["php", "think", "quick-create:worker", "--sleep=2", "--cooldown=3", "--max-concurrency=2", "--stale-minutes=20", "--pending-timeout-minutes=20"]
+  ecommerce-worker:
+    <<: *worker
+    command: ["php", "think", "ecommerce:worker", "--sleep=3"]
   quick-create-face-worker:
     <<: *worker
     command: ["php", "think", "quick-create:face-worker", "--sleep=2", "--stale-minutes=20"]

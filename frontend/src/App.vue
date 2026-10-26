@@ -11,7 +11,7 @@ const route = useRoute()
 const auth = useAuthStore()
 const workerCrewReady = ref(false)
 const isBlankLayout = () => route.meta?.layout === 'blank'
-const showWorkerCrew = computed(() => workerCrewReady.value && auth.user?.role !== 'admin' && route.name !== 'promptAssistant')
+const showWorkerCrew = computed(() => workerCrewReady.value && auth.user?.role !== 'admin' && !['promptAssistant', 'ecommerceBox'].includes(String(route.name)))
 
 let creditPollTimer: number | null = null
 

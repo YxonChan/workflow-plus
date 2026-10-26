@@ -12,6 +12,8 @@ class PromptAssistantTextClient
 {
     private int $calls = 0;
 
+    public function __construct(private string $source = 'prompt_assistant') {}
+
     public function complete(ModelConfig $model, int $userId, string $stage, string $system, array $input, int $maxTokens = 4096): array
     {
         return $this->request($model, $userId, $stage, $system, $input, $maxTokens, []);
@@ -92,7 +94,7 @@ class PromptAssistantTextClient
                     ['type' => 'text', 'text' => '[Attached images: ' . count($images) . ']']];
             }
             AiRequestLog::create([
-                'user_id' => $userId, 'source' => 'prompt_assistant', 'model_config_id' => (int) $model->getAttr('id'),
+                'user_id' => $userId, 'source' => $this->source, 'model_config_id' => (int) $model->getAttr('id'),
                 'llm_model' => $payload['model'], 'endpoint' => mb_substr($endpoint, 0, 500),
                 'context_json' => json_encode(['stage' => $stage], JSON_UNESCAPED_UNICODE),
                 'request_json' => json_encode($logPayload, JSON_UNESCAPED_UNICODE),

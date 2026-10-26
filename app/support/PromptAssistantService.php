@@ -103,12 +103,7 @@ class PromptAssistantService
         self::ensureSchema();
         Db::name('prompt_assistant_skills')->where('user_id', $userId)->where('status', 'validating')
             ->where('update_time', '<', date('Y-m-d H:i:s', time() - 660))->update(['status' => 'draft']);
-        $builtins = json_decode(file_get_contents(dirname(__DIR__) . '/resources/prompt_skills.json'), true, 512, JSON_THROW_ON_ERROR);
-        $catalog = array_map(static fn (array $skill): array => $skill + [
-            'status' => 'ready', 'is_builtin' => true, 'version' => '1.0', 'license' => 'MIT',
-            'source_url' => 'https://github.com/coreyhaines31/marketingskills/tree/55ff469422c3592dac45bcad08dfb40221981c02/skills/' . $skill['source'],
-            'evaluations' => [], 'create_time' => null,
-        ], $builtins);
+        $catalog = PromptSkillCatalog::builtins();
         $query = Db::name('prompt_assistant_skills')->where('user_id', $userId)->order('id', 'desc');
         if (!$includeDrafts) {
             $query->where('status', 'ready');

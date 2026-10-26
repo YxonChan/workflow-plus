@@ -63,6 +63,7 @@ const navItems = computed(() => {
     { name: 'series', label: t('作品'), desc: t('剧本到成片'), icon: 'Film' },
     { name: 'scriptCreation', label: t('剧本创作'), desc: t('AI 自动创作'), icon: 'EditPen' },
     { name: 'quickCreate', label: t('速创'), desc: t('对话快速生成'), icon: 'MagicStick' },
+    { name: 'ecommerceBox', label: t('电商宝盒'), desc: t('商品创作'), icon: 'Box' },
     { name: 'promptAssistant', label: t('提示词'), desc: t('提示词助手'), icon: 'Document' },
     { name: 'styles', label: t('风格化'), desc: t('整片质感色调'), icon: 'Brush' },
     { name: 'assets', label: t('资产'), desc: t('角色场景道具'), icon: 'Picture' },

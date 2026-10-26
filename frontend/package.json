@@ -18,6 +18,7 @@
     "@vue-flow/node-toolbar": "^1.1.1",
     "axios": "^1.7.2",
     "element-plus": "^2.7.4",
+    "fflate": "^0.8.3",
     "pdfjs-dist": "^5.7.284",
     "pinia": "^2.1.7",
     "qrcode": "^1.5.4",

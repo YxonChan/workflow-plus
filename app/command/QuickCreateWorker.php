@@ -98,8 +98,12 @@ class QuickCreateWorker extends Command
             return null;
         }
 
+        $generationLock = false;
         try {
-            $runningCount = QuickCreateMessage::where('status', 'running')->count();
+            $generationLock = \app\support\GenerationQueueLock::acquire();
+            if (!$generationLock) return null;
+            $runningCount = QuickCreateMessage::where('status', 'running')->count()
+                + \app\support\GenerationQueueLock::ecommerceInFlight();
             if ((int) $runningCount >= $maxConcurrency) {
                 return null;
             }
@@ -129,6 +133,7 @@ class QuickCreateWorker extends Command
                 return $message;
             });
         } finally {
+            if ($generationLock) \app\support\GenerationQueueLock::release();
             if ($queueLockToken !== null) {
                 RedisCache::releaseLock($queueLockKey, $queueLockToken);
             }

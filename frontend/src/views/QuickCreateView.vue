@@ -1049,6 +1049,11 @@ function createEditorReference(part: Extract<QcPromptPart, { type: 'reference' }
 function renderPromptEditor(caretPosition?: number) {
   const root = inputEl.value
   if (!root) return
+  if (!promptText.value) {
+    root.replaceChildren()
+    if (caretPosition !== undefined) restoreEditorCaret(0)
+    return
+  }
   const parts = pendingPromptParts()
   const nodes: Node[] = []
   let lastWasReference = false
@@ -1695,6 +1700,8 @@ async function send() {
   }
   armSendCooldown()
   sending.value = true
+  const submittedPrompt = promptText.value
+  const submittedReferences = JSON.stringify(pendingRefs.value)
   try {
     const res = await sendQuickCreateMessage({
       mode: mode.value,
@@ -1722,6 +1729,19 @@ async function send() {
       },
     })
     messages.value.push(res.message)
+    // Preserve a new draft typed while the submission request was in flight.
+    if (promptText.value === submittedPrompt && JSON.stringify(pendingRefs.value) === submittedReferences) {
+      promptText.value = ''
+      pendingRefs.value = []
+      promptVideoTiming.value = null
+      timingNeedsReview.value = false
+      mentionVisible.value = false
+      mentionKeyword.value = ''
+      mentionStart.value = -1
+      mentionEnd.value = -1
+      referenceHoverPreview.value = null
+      void nextTick(renderPromptEditor)
+    }
     activePolls.add(res.message.id)
     ensurePolling()
     void nextTick(autoGrowTextarea)
@@ -2616,6 +2636,9 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
   display: flex;
   flex-direction: column;
   height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   max-width: 960px;
   margin: 0 auto;
   padding: var(--space-lg);
@@ -2794,6 +2817,8 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
 // ── 消息流 ───────────────────────────────────────────────────────────────────
 .qc-stream {
   flex: 1;
+  min-height: 64px;
+  min-width: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -3340,7 +3365,14 @@ function downloadResult(message: QuickCreateMessage, url: string, resultIndex: n
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-height: 0;
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+
+  > * {
+    flex-shrink: 0;
+  }
 }
 
 .qc-retention-hint {

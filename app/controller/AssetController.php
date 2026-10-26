@@ -2086,6 +2086,7 @@ class AssetController extends BaseController
             }
         }
 
+        \app\support\EcommerceService::rememberResult((int) ($context['ecommerce_job_id'] ?? 0), $imageUrl, $this->lastAiRequestLogId);
         if ($pendingTask instanceof PendingImageTaskException) {
             throw $pendingTask;
         }
@@ -2354,6 +2355,7 @@ class AssetController extends BaseController
 
     private function rememberImageProviderTask(array $context, string $taskId): void
     {
+        \app\support\EcommerceService::rememberTask((int) ($context['ecommerce_job_id'] ?? 0), $taskId);
         $messageId = (int) ($context['quick_create_message_id'] ?? 0);
         if ($messageId > 0 && trim($taskId) !== '') {
             \app\model\QuickCreateMessage::where('id', $messageId)->where('user_id', $this->effectiveUserId())

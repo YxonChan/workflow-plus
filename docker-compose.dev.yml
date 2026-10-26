@@ -7,6 +7,9 @@ services:
   quick-create-worker:
     volumes:
       - .:/var/www/html
+  ecommerce-worker:
+    volumes:
+      - .:/var/www/html
   quick-create-face-worker:
     volumes:
       - .:/var/www/html

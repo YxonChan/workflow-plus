@@ -11606,12 +11606,14 @@ PROMPT;
             if (!isset($context['resolution'])) {
                 $context['resolution'] = (string) ($options['resolution'] ?? '480p');
             }
-            \app\support\CreditService::assertVideoAffordable(
-                $creditUserId,
-                (int) $context['duration_seconds'],
-                (string) $context['resolution'],
-                $modelId
-            );
+            if (empty($context['ecommerce_job_id']) || empty($context['provider_task_id'])) {
+                \app\support\CreditService::assertVideoAffordable(
+                    $creditUserId,
+                    (int) $context['duration_seconds'],
+                    (string) $context['resolution'],
+                    $modelId
+                );
+            }
             $referenceVideos = [];
             if ($this->isMiniMaxVideoEndpoint($endpoint, $options)) {
                 $seconds = max(4, min(15, $seconds > 0 ? $seconds : 15));
@@ -11707,9 +11709,18 @@ PROMPT;
             if ($referenceUploadMap !== []) {
                 $requestSnapshot['reference_uploads'] = $referenceUploadMap;
             }
-            $response = $this->isMini23VideoEndpoint($endpoint, $options) && $mini23ReferenceFiles !== []
-                ? $this->curlMini23MultipartPost($endpoint, $headers, $payload, $mini23ReferenceFiles, $httpStatus, $curlErrno, $curlError, 900)
-                : $this->curlJsonPost($endpoint, $headers, $payload, $httpStatus, $curlErrno, $curlError, 900);
+            $ecommerceResumeTaskId = (int) ($context['ecommerce_job_id'] ?? 0) > 0
+                ? trim((string) ($context['provider_task_id'] ?? '')) : '';
+            if ($ecommerceResumeTaskId !== '') {
+                $response = json_encode(['id' => $ecommerceResumeTaskId, 'status' => 'in_progress'], JSON_UNESCAPED_UNICODE);
+                $httpStatus = 200;
+                $requestSnapshot = $this->buildAiRequestLogSnapshot('GET', $this->resolveVideoResultEndpoint($endpoint,
+                    $ecommerceResumeTaskId, $options, (string) ($context['result_endpoint'] ?? '')), $headers, ['resume' => true]);
+            } else {
+                $response = $this->isMini23VideoEndpoint($endpoint, $options) && $mini23ReferenceFiles !== []
+                    ? $this->curlMini23MultipartPost($endpoint, $headers, $payload, $mini23ReferenceFiles, $httpStatus, $curlErrno, $curlError, 900)
+                    : $this->curlJsonPost($endpoint, $headers, $payload, $httpStatus, $curlErrno, $curlError, 900);
+            }
             $rawBody = $response;
             if ($curlErrno !== 0) {
                 $errorMessage = 'AI 视频请求失败：' . $curlError;
@@ -11732,6 +11743,11 @@ PROMPT;
                 $taskId = $this->extractVideoTaskIdFromResponse($decoded);
                 if ($taskId !== '') {
                     $resultEndpoint = trim((string) ($decoded['data']['urls']['get'] ?? ''));
+                    if ((int) ($context['ecommerce_job_id'] ?? 0) > 0) {
+                        $resultEndpoint = $resultEndpoint ?: (string) ($context['result_endpoint'] ?? '');
+                        \app\support\EcommerceService::rememberTask((int) $context['ecommerce_job_id'], $taskId,
+                            $this->resolveVideoResultEndpoint($endpoint, $taskId, $options, $resultEndpoint));
+                    }
                     $videoJobId = (int) ($context['video_job_id'] ?? 0);
                     if ($videoJobId > 0) {
                         $pollEndpoint = $this->resolveVideoResultEndpoint($endpoint, $taskId, $options, $resultEndpoint);
@@ -11819,6 +11835,9 @@ PROMPT;
                 'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                 'content_preview' => $videoUrl,
             ]) ?? 0;
+            if ($requestOk === 1) {
+                \app\support\EcommerceService::rememberResult((int) ($context['ecommerce_job_id'] ?? 0), $videoUrl, $this->lastAiRequestLogId);
+            }
             foreach ($tempFiles as $tempFile) {
                 if (is_string($tempFile) && $tempFile !== '' && is_file($tempFile)) {
                     @unlink($tempFile);

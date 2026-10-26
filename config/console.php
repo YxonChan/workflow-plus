@@ -6,6 +6,7 @@
 return [
     // 指令定义
     'commands' => [
+        'ecommerce:worker' => \app\command\EcommerceWorker::class,
         'workflow:worker' => \app\command\WorkflowWorker::class,
         'episode-workflow:worker' => \app\command\EpisodeWorkflowWorker::class,
         'episode-node:worker' => \app\command\EpisodeNodeWorker::class,
