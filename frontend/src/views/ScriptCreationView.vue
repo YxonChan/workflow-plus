@@ -945,7 +945,7 @@ onBeforeUnmount(() => {
 .agent-config.is-disabled { opacity: 0.68; }
 .override-row { margin-bottom: var(--space-md); display: flex; align-items: center; justify-content: space-between; color: var(--body); font-size: 12px; }
 .placeholder-help { margin: -8px 0 0; color: var(--muted); font-size: 11px; }
-@media (max-width: 1280px) { .script-workbench { grid-template-columns: 230px minmax(400px, 1fr) 290px; } }
+@media (max-width: 1366px) { .script-workbench { grid-template-columns: minmax(168px, 210px) minmax(0, 1fr) minmax(200px, 260px); gap: 12px; padding: 12px; } }
 @media (max-width: 1180px) { .config-fields { grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(160px, 0.55fr)); } }
 @media (max-width: 980px) { .script-workbench { overflow-y: auto; grid-template-columns: 1fr; } .flow-panel, .runtime-panel, .output-panel { min-height: 420px; } .agent-config-grid, .config-fields { grid-template-columns: 1fr; } }
 @media (max-width: 680px) { .form-grid, .external-access__meta, .auth-method-list { grid-template-columns: 1fr; } .flow-intro { align-items: flex-start; flex-wrap: wrap; } .config-card { padding: var(--space-md); } .config-card__heading { flex-wrap: wrap; } .config-card__heading :deep(.status-badge), .config-card__heading :deep(.el-switch) { max-width: 100%; } .endpoint-list > div { grid-template-columns: 50px minmax(0, 1fr); } .endpoint-list :deep(.el-button) { grid-column: 2; justify-self: start; } }

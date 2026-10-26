@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Picture, Upload, DocumentCopy, MagicStick, Microphone, CircleCheckFilled, WarningFilled, CircleCloseFilled, Loading } from '@element-plus/icons-vue'
+import { Plus, Delete, Picture, Upload, DocumentCopy, MagicStick, Microphone } from '@element-plus/icons-vue'
 import VoiceAssetsPanel from '@/components/assets/VoiceAssetsPanel.vue'
 import request from '@/api/http'
-import { cancelAssetImageJobs, createAsset, deleteAssetImage, deleteAssetImageVersion, detectLookAvatar, getAssetImageJob, listAssets, selectAssetImageVersion, updateAsset } from '@/api/asset'
+import { cancelAssetImageJobs, createAsset, deleteAssetImage, deleteAssetImageVersion, getAssetImageJob, listAssets, selectAssetImageVersion, updateAsset } from '@/api/asset'
 import { listGrouped as listModelConfigs } from '@/api/modelConfig'
 import { useAuthStore } from '@/stores/auth'
 import { t } from '@/i18n'
@@ -45,7 +45,6 @@ const generationLoading = ref<Record<string, boolean>>({})
 const generationStatus = ref<Record<string, string>>({})
 const pendingGenerationJobIds = ref<Record<string, number>>({})
 const cancellingGenerationKeys = ref<Record<string, boolean>>({})
-const lookAvatarLoading = ref<Record<string, boolean>>({})
 const selectingAssetImageVersionIds = ref<Record<number, boolean>>({})
 const deletingAssetImageVersionIds = ref<Record<number, boolean>>({})
 const deletingAssetImageIds = ref<Record<number, boolean>>({})
@@ -83,8 +82,6 @@ const VIEW_TYPES = [
 const hasPersistedAsset = computed(() => !!props.asset?.id)
 const hasPersistedCharacterAsset = computed(() => !!props.asset?.id && props.asset.type === 'character')
 const lookImages = computed(() => form.images.filter((img) => img.reference_role === 'look'))
-const currentSeries = computed(() => (props.seriesList ?? []).find((item) => item.id === form.series_id) ?? null)
-const needsLookAvatarCheck = computed(() => false)
 const isCharacterAsset = computed(() => form.type === 'character')
 const coreSectionTitle = computed(() => isCharacterAsset.value ? t('核心形象') : t('核心视图'))
 const seriesList = computed(() => props.seriesList ?? [])
@@ -93,7 +90,6 @@ const preservedSupplementalImages = ref<AssetImage[]>([])
 watch(visible, (value) => {
   if (value) void ensureImageModels()
   if (!value) {
-    emitLookAvatarSnapshot()
     clearImageJobTimers()
   }
 })
@@ -116,7 +112,6 @@ watch(
       generationStatus.value = {}
       pendingGenerationJobIds.value = {}
       cancellingGenerationKeys.value = {}
-      lookAvatarLoading.value = {}
       focusedImageId.value = null
       return
     }
@@ -237,7 +232,6 @@ async function refreshPersistedAssetFromServer(): Promise<Asset | null> {
     const updated = (list || []).find((item) => Number(item.id) === assetId) || null
     if (!updated) return null
     applyAssetImages(updated)
-    applyLookAvatarFromAsset(updated)
     emit('saved', updated)
     return updated
   } catch {
@@ -650,184 +644,11 @@ function syncFromAsset(asset: Asset) {
   applyAssetImages(asset)
 }
 
-function lookAvatarKey(img: AssetImage) {
-  return img.id ? `look-avatar-${img.id}` : `look-avatar-${img.view_type}`
-}
-
-function applyLookAvatarFromAsset(asset: Asset) {
-  for (const img of form.images) {
-    if (img.reference_role !== 'look' || !img.id) continue
-    const matched = (asset.images ?? []).find((item) => item.id === img.id)
-    if (!matched) continue
-    img.has_toapis_avatar = !!matched.has_toapis_avatar
-    img.toapis_status = matched.toapis_status ?? ''
-    img.look_avatar_pending = !!matched.look_avatar_pending
-    img.look_avatar_job_id = Number(matched.look_avatar_job_id || 0)
-  }
-}
-
-function lookAvatarState(img: AssetImage): 'passed' | 'pending' | 'failed' | 'unchecked' | 'empty' | 'off' {
-  if (!needsLookAvatarCheck.value) return 'off'
-  if (img.has_toapis_avatar) return 'passed'
-  if (
-    img.look_avatar_pending
-    || lookAvatarLoading.value[lookAvatarKey(img)]
-    || (img.toapis_status || '') === 'processing'
-  ) return 'pending'
-  if ((img.toapis_status || '') === 'failed') return 'failed'
-  if (!(img.url || '').trim()) return 'empty'
-  return 'unchecked'
-}
-
-function lookAvatarButtonLabel(img: AssetImage) {
-  const state = lookAvatarState(img)
-  if (state === 'passed') return t('已过真人检测')
-  if (state === 'pending') return t('真人检测中')
-  if (state === 'failed') return t('重新检测')
-  return t('去真人检测')
-}
-
-function lookAvatarStatusText(img: AssetImage) {
-  const state = lookAvatarState(img)
-  if (state === 'passed') return t('已过真人检测，可用于写实视频')
-  if (state === 'pending') return t('真人检测进行中，完成后才能用于写实视频')
-  if (state === 'failed') return t('真人检测失败，写实视频无法使用此造型')
-  if (state === 'unchecked') return t('未过真人检测，写实视频无法使用此造型')
-  return t('请先生成或上传造型图，再做真人检测')
-}
-
-function lookAvatarButtonDisabled(img: AssetImage) {
-  if (!img.id || !(img.url || '').trim()) return true
-  const state = lookAvatarState(img)
-  return state === 'passed' || state === 'pending' || state === 'off'
-}
-
-async function handleDetectLookAvatar(img: AssetImage) {
-  if (guardLocked()) return
-  if (!props.asset?.id || !img.id) {
-    return ElMessage.warning(t('请先保存人物本体，再为人物造型生成图片'))
-  }
-  if (!(img.url || '').trim()) {
-    return ElMessage.warning(t('请先生成或上传这套造型图，再做真人检测'))
-  }
-  const key = lookAvatarKey(img)
-  lookAvatarLoading.value = { ...lookAvatarLoading.value, [key]: true }
-  img.look_avatar_pending = true
-  img.toapis_status = 'processing'
-  try {
-    const res = await detectLookAvatar(props.asset.id, img.id)
-    if (res.asset) {
-      applyLookAvatarFromAsset(res.asset)
-      emit('saved', res.asset)
-    }
-    if (res.already_active) {
-      img.has_toapis_avatar = true
-      img.toapis_status = 'active'
-      img.look_avatar_pending = false
-      lookAvatarLoading.value = { ...lookAvatarLoading.value, [key]: false }
-      const refreshed = await refreshPersistedAssetFromServer()
-      if (!refreshed && res.asset) emit('saved', res.asset)
-      ElMessage.success(t('真人检测已通过'))
-      return
-    }
-    const jobId = Number(res.job?.id || img.look_avatar_job_id || 0)
-    if (!jobId) throw new Error(t('真人检测失败'))
-    img.look_avatar_job_id = jobId
-    img.look_avatar_pending = true
-    img.toapis_status = img.toapis_status || 'processing'
-    ElMessage.success(t('真人检测已加入队列'))
-    pollLookAvatarJob(jobId, img, key)
-  } catch (err: any) {
-    img.look_avatar_pending = false
-    img.toapis_status = 'failed'
-    lookAvatarLoading.value = { ...lookAvatarLoading.value, [key]: false }
-    ElMessage.error(err.message || t('真人检测失败'))
-  }
-}
-
-function currentLookImage(img: AssetImage): AssetImage {
-  return (img.id ? form.images.find((item) => item.id === img.id) : undefined) ?? img
-}
-
-function emitLookAvatarSnapshot() {
-  if (!props.asset) return
-  emit('saved', {
-    ...props.asset,
-    images: (props.asset.images ?? []).map((item) => {
-      const current = item.id ? form.images.find((img) => img.id === item.id) : undefined
-      if (!current) return item
-      return {
-        ...item,
-        has_toapis_avatar: current.has_toapis_avatar,
-        toapis_status: current.toapis_status,
-        look_avatar_pending: current.look_avatar_pending,
-        look_avatar_job_id: current.look_avatar_job_id,
-      }
-    }),
-  })
-}
-
-async function pollLookAvatarJob(jobId: number, img: AssetImage, key: string, attempt = 0) {
-  const existingTimer = imageJobTimers.get(key)
-  if (existingTimer) window.clearTimeout(existingTimer)
-  const target = currentLookImage(img)
-  try {
-    const job: any = await getAssetImageJob(jobId, { silent: true })
-    if (job.status === 'success') {
-      target.has_toapis_avatar = true
-      target.toapis_status = 'active'
-      target.look_avatar_pending = false
-      target.look_avatar_job_id = 0
-      lookAvatarLoading.value = { ...lookAvatarLoading.value, [key]: false }
-      imageJobTimers.delete(key)
-      const refreshed = await refreshPersistedAssetFromServer()
-      if (!refreshed) emitLookAvatarSnapshot()
-      ElMessage.success(t('真人检测已通过'))
-      return
-    }
-    if (job.status === 'failed' || job.status === 'cancelled') {
-      target.has_toapis_avatar = false
-      target.toapis_status = 'failed'
-      target.look_avatar_pending = false
-      lookAvatarLoading.value = { ...lookAvatarLoading.value, [key]: false }
-      imageJobTimers.delete(key)
-      emitLookAvatarSnapshot()
-      ElMessage.error(job.error_message || t('真人检测失败'))
-      return
-    }
-    if (attempt >= 240) {
-      target.look_avatar_pending = false
-      lookAvatarLoading.value = { ...lookAvatarLoading.value, [key]: false }
-      imageJobTimers.delete(key)
-      return
-    }
-    target.look_avatar_pending = true
-    if ((target.toapis_status || '') === 'failed' || !(target.toapis_status || '').trim()) {
-      target.toapis_status = 'processing'
-    }
-    lookAvatarLoading.value = { ...lookAvatarLoading.value, [key]: true }
-    const delay = attempt < 5 ? 2000 : 4000
-    const timer = window.setTimeout(() => pollLookAvatarJob(jobId, target, key, attempt + 1), delay)
-    imageJobTimers.set(key, timer)
-  } catch (err: any) {
-    if (attempt >= 3) {
-      target.look_avatar_pending = false
-      lookAvatarLoading.value = { ...lookAvatarLoading.value, [key]: false }
-      imageJobTimers.delete(key)
-      ElMessage.error(err.message || t('真人检测失败'))
-      return
-    }
-    const timer = window.setTimeout(() => pollLookAvatarJob(jobId, target, key, attempt + 1), 3000)
-    imageJobTimers.set(key, timer)
-  }
-}
-
 function restoreImageJobs(asset: Asset) {
   generationLoading.value = {}
   generationStatus.value = {}
   pendingGenerationJobIds.value = {}
   cancellingGenerationKeys.value = {}
-  lookAvatarLoading.value = {}
   for (const job of asset.image_jobs ?? []) {
     const index = form.images.findIndex((img) => job.asset_image_id ? img.id === job.asset_image_id : img.view_type === job.view_type)
     if (index < 0) continue
@@ -840,14 +661,6 @@ function restoreImageJobs(asset: Asset) {
       }
       pollImageJob(job.id, form.images[index], key)
     }
-  }
-  for (const img of form.images) {
-    if (img.reference_role !== 'look') continue
-    const pending = !!img.look_avatar_pending || (img.toapis_status || '') === 'processing'
-    if (!pending || !img.look_avatar_job_id) continue
-    const key = lookAvatarKey(img)
-    lookAvatarLoading.value = { ...lookAvatarLoading.value, [key]: true }
-    pollLookAvatarJob(img.look_avatar_job_id, img, key)
   }
 }
 
@@ -1063,16 +876,12 @@ async function submitAsset() {
               <span>{{ t('添加造型') }}</span>
             </el-button>
           </div>
-          <p v-if="needsLookAvatarCheck" class="look-section-note">{{ t('写实视频必须先过真人检测') }}</p>
           <div class="look-card-list">
             <article
               v-for="(img, idx) in lookImages"
               :key="img.id || `look-${idx}`"
               class="look-card"
-              :class="[
-                `look-card--${lookAvatarState(img)}`,
-                { 'is-focused': !!img.id && focusedImageId === img.id },
-              ]"
+              :class="{ 'is-focused': !!img.id && focusedImageId === img.id }"
               :data-asset-image-id="img.id || undefined"
             >
               <div class="look-card-preview" @click="img.url ? openImagePreview(img.url) : uploadImageToUrl((url) => { img.url = url })">
@@ -1089,17 +898,6 @@ async function submitAsset() {
                 </span>
               </div>
               <div class="look-card-body">
-                <div
-                  v-if="needsLookAvatarCheck"
-                  class="look-status-banner"
-                  :class="`look-status-banner--${lookAvatarState(img)}`"
-                >
-                  <el-icon v-if="lookAvatarState(img) === 'passed'"><CircleCheckFilled /></el-icon>
-                  <el-icon v-else-if="lookAvatarState(img) === 'pending'" class="is-loading"><Loading /></el-icon>
-                  <el-icon v-else-if="lookAvatarState(img) === 'failed'"><CircleCloseFilled /></el-icon>
-                  <el-icon v-else><WarningFilled /></el-icon>
-                  <strong>{{ lookAvatarStatusText(img) }}</strong>
-                </div>
                 <div class="look-card-toolbar">
                   <el-input v-model="img.variant_name" size="small" :disabled="locked" :placeholder="t('造型名称，例如：第2集常服')" />
                   <el-button
@@ -1123,16 +921,6 @@ async function submitAsset() {
                   >
                     <el-icon><MagicStick /></el-icon>
                     <span>{{ displayGenerationStatus(generationStatus[imageJobKey(img, idx + 10)]) }}</span>
-                  </el-button>
-                  <el-button
-                    v-if="needsLookAvatarCheck"
-                    size="small"
-                    :type="lookAvatarState(img) === 'passed' ? 'success' : lookAvatarState(img) === 'failed' ? 'danger' : 'warning'"
-                    :loading="!!lookAvatarLoading[lookAvatarKey(img)]"
-                    :disabled="locked || lookAvatarButtonDisabled(img)"
-                    @click="handleDetectLookAvatar(img)"
-                  >
-                    <span>{{ lookAvatarButtonLabel(img) }}</span>
                   </el-button>
                   <el-button type="danger" link :disabled="locked" :loading="isDeletingAssetImage(img)" @click="removeImageRow(img)">
                     <el-icon><Delete /></el-icon>
@@ -1416,13 +1204,6 @@ async function submitAsset() {
   font-weight: 850;
 }
 
-.look-section-note {
-  margin: -4px 0 12px;
-  color: var(--accent-amber);
-  font-size: 12px;
-  font-weight: 800;
-}
-
 .look-card-list {
   display: flex;
   flex-direction: column;
@@ -1443,27 +1224,6 @@ async function submitAsset() {
 .look-card.is-focused {
   border-color: rgba(14, 165, 233, 0.72);
   box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
-}
-
-.look-card--passed {
-  border-color: rgba(52, 211, 153, 0.72);
-  background: rgba(52, 211, 153, 0.08);
-}
-
-.look-card--unchecked,
-.look-card--empty {
-  border-color: rgba(251, 191, 36, 0.78);
-  background: rgba(251, 191, 36, 0.1);
-}
-
-.look-card--failed {
-  border-color: rgba(251, 113, 133, 0.78);
-  background: rgba(251, 113, 133, 0.1);
-}
-
-.look-card--pending {
-  border-color: rgba(96, 165, 250, 0.72);
-  background: rgba(96, 165, 250, 0.08);
 }
 
 .look-card-preview {
@@ -1489,54 +1249,6 @@ async function submitAsset() {
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-}
-
-.look-status-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.look-status-banner .el-icon {
-  flex: 0 0 auto;
-  font-size: 18px;
-}
-
-.look-status-banner strong {
-  font-weight: 850;
-}
-
-.look-status-banner--passed {
-  background: #059669;
-  color: #ecfdf5;
-}
-
-.look-status-banner--unchecked,
-.look-status-banner--empty {
-  background: #d97706;
-  color: #fffbeb;
-}
-
-.look-status-banner--failed {
-  background: #e11d48;
-  color: #fff1f2;
-}
-
-.look-status-banner--pending {
-  background: #2563eb;
-  color: #eff6ff;
-}
-
-.look-status-banner .is-loading {
-  animation: look-spin 1s linear infinite;
-}
-
-@keyframes look-spin {
-  to { transform: rotate(360deg); }
 }
 
 .look-card-toolbar {

@@ -14,17 +14,21 @@ const appStore = useAppStore()
 const auth = useAuthStore()
 const { t } = useI18n()
 const { isRailCollapsed: preferredRailCollapsed } = storeToRefs(appStore)
-const narrowViewport = window.matchMedia('(max-width: 760px)')
-const isNarrowViewport = ref(narrowViewport.matches)
-const compactStyleNavigation = computed(() => ['styles', 'promptAssistant', 'quickCreate'].includes(String(route.name)) && isNarrowViewport.value)
-const isRailCollapsed = computed(() => preferredRailCollapsed.value || compactStyleNavigation.value)
+const compactQuery = window.matchMedia('(max-width: 1366px)')
+const isCompactViewport = ref(compactQuery.matches)
+const compactOverride = ref<boolean | null>(null)
+const isRailCollapsed = computed(() => {
+  if (isCompactViewport.value) return compactOverride.value ?? true
+  return preferredRailCollapsed.value
+})
 
 function updateViewport(event: MediaQueryListEvent) {
-  isNarrowViewport.value = event.matches
+  isCompactViewport.value = event.matches
+  compactOverride.value = null
 }
 
-onMounted(() => narrowViewport.addEventListener('change', updateViewport))
-onBeforeUnmount(() => narrowViewport.removeEventListener('change', updateViewport))
+onMounted(() => compactQuery.addEventListener('change', updateViewport))
+onBeforeUnmount(() => compactQuery.removeEventListener('change', updateViewport))
 
 /** public/brand/logo.png → served under Vite base (/admin/) */
 const brandLogoUrl = `${import.meta.env.BASE_URL}brand/logo.png`
@@ -86,6 +90,10 @@ function logout() {
 }
 
 function toggleRail() {
+  if (isCompactViewport.value) {
+    compactOverride.value = !isRailCollapsed.value
+    return
+  }
   appStore.toggleRail()
 }
 
@@ -164,7 +172,7 @@ function goHome() {
         </el-tooltip>
       </div>
 
-      <button v-if="!compactStyleNavigation" type="button" class="sidebar-toggle" @click="toggleRail" :title="isRailCollapsed ? t('展开菜单') : t('收起菜单')">
+      <button type="button" class="sidebar-toggle" @click="toggleRail" :title="isRailCollapsed ? t('展开菜单') : t('收起菜单')">
         <el-icon :size="16">
           <component :is="resolveIcon(isRailCollapsed ? 'Expand' : 'Fold')" />
         </el-icon>

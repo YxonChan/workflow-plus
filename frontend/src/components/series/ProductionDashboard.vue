@@ -679,25 +679,40 @@ function stageSummary(node: StageNode, episode: Episode | null) {
   if (isAssetExtractionNode(node)) {
     return assetOutputSummary(node)
   }
+  if (node.kind === 'video') {
+    return videoStageSummary(node, episode)
+  }
 
   const raw = node.raw_output?.trim()
-  if (raw) return raw.slice(0, 180)
+  if (raw && !isMachinePayload(raw)) return raw.slice(0, 180)
 
   const output = (node.output_json ?? {}) as Record<string, any>
   for (const key of ['text', 'content', 'result', 'script', 'plot', 'summary', 'note']) {
     const value = output[key]
-    if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 180)
+    if (typeof value === 'string' && value.trim() && !isMachinePayload(value)) return value.trim().slice(0, 180)
   }
 
   if (node.kind === 'image') {
     const count = shotCount(episode, 'image_url')
     return count > 0 ? t('已生成 {count} 张分镜画面', { count }) : t('等待生成分镜画面')
   }
-  if (node.kind === 'video') {
-    const count = nodeVideoItems(node, episode).length
-    return count > 0 ? t('已生成 {count} 段视频片段', { count }) : t('等待生成视频片段')
-  }
   return node.status === 'success' ? t('节点已完成，暂无可预览文本') : t('暂无产物')
+}
+
+function isMachinePayload(value: string) {
+  const raw = value.trim()
+  return raw.startsWith('{') || raw.startsWith('[')
+}
+
+function videoStageSummary(node: StageNode, episode: Episode | null) {
+  const rows = episode ? videoShotRows(node, episode) : []
+  const ready = rows.filter((shot) => typeof shot?.video_url === 'string' && shot.video_url.trim()).length
+  if (ready > 0 && rows.length > ready) {
+    return t('已生成 {ready}/{total} 段视频', { ready, total: rows.length })
+  }
+  if (ready > 0) return t('已生成 {count} 段视频片段', { count: ready })
+  if (rows.length > 0) return t('共 {count} 个镜头，等待生成视频', { count: rows.length })
+  return t('等待生成视频片段')
 }
 
 function prettyOutput(value: unknown) {
@@ -3162,6 +3177,7 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
 <style scoped lang="scss">
 .production-board {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-columns: clamp(276px, 18vw, 328px) minmax(0, 1fr) clamp(320px, 22vw, 400px);
@@ -3171,6 +3187,7 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
 
 .episode-rail,
 .asset-panel {
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -4654,20 +4671,20 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
 
 .asset-output-stat span {
   grid-column: 1 / -1;
-  color: var(--muted);
+  color: #334155;
   font-size: 12px;
   font-weight: 850;
 }
 
 .asset-output-stat strong {
-  color: var(--on-dark);
+  color: #0f172a;
   font-size: 28px;
   line-height: 1;
   font-weight: 950;
 }
 
 .asset-output-stat em {
-  color: var(--muted);
+  color: #475569;
   font-size: 12px;
   font-style: normal;
   font-weight: 850;
@@ -4679,9 +4696,17 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
   border-color: #dbeafe;
 }
 
+.asset-output-stat--character strong {
+  color: #1d4ed8;
+}
+
 .asset-output-stat--scene {
   background: linear-gradient(180deg, #ecfdf5 0%, #f7fffb 100%);
   border-color: #d1fae5;
+}
+
+.asset-output-stat--scene strong {
+  color: #047857;
 }
 
 .asset-output-stat--prop {
@@ -4689,9 +4714,17 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
   border-color: #ffedd5;
 }
 
+.asset-output-stat--prop strong {
+  color: #c2410c;
+}
+
 .asset-output-stat--look {
   background: linear-gradient(180deg, #f5f3ff 0%, #faf9ff 100%);
   border-color: #ede9fe;
+}
+
+.asset-output-stat--look strong {
+  color: #6d28d9;
 }
 
 .asset-output-stat--core_image,
@@ -5627,6 +5660,10 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
 }
 
 @media (max-width: 720px) {
+  .asset-preview {
+    grid-template-columns: 1fr;
+  }
+
   .video-production-panel__head {
     align-items: stretch;
   }
@@ -6007,7 +6044,7 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
   object-fit: cover;
 }
 
-@media (max-width: 1500px) {
+@container works (max-width: 1500px) {
   .production-board {
     grid-template-columns: 284px minmax(0, 1fr) 320px;
   }
@@ -6036,26 +6073,129 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
   }
 }
 
-@media (max-width: 1320px) {
+@container works (max-height: 860px) {
+  .episode-preview,
+  .episode-preview__empty {
+    min-height: 112px;
+  }
+
+  .workbench-head {
+    min-height: 52px;
+    padding: 10px 14px;
+  }
+
+  .workbench-body {
+    gap: 12px;
+    padding-top: 12px;
+  }
+
+  .rail-head {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .rail-title span,
+  .rail-workflow {
+    display: none;
+  }
+
+  .rail-title strong {
+    font-size: 16px;
+  }
+
+  .work-summary {
+    margin: 10px 12px;
+    padding: 10px 12px;
+  }
+
+  .work-summary__meta {
+    display: none;
+  }
+}
+
+@container works (max-width: 1320px) {
   .production-board {
-    grid-template-columns: 280px minmax(0, 1fr);
-    overflow-y: auto;
+    grid-template-columns: minmax(168px, 200px) minmax(0, 1fr) minmax(210px, 250px);
+  }
+
+  .workbench-head {
+    min-height: 64px;
+    padding: 12px 16px;
+  }
+
+  .episode-summary-card {
+    grid-template-columns: 148px minmax(0, 1fr);
+  }
+
+  .stage-card {
+    gap: 10px;
+    padding: 10px;
+  }
+}
+
+@container works (max-width: 1100px) {
+  .production-board {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 148px minmax(0, 1fr) minmax(120px, 22vh);
+    overflow: hidden;
+  }
+
+  .episode-rail {
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .episode-list {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: row;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 10px 6px;
+  }
+
+  .episode-item {
+    width: 200px;
+    flex: 0 0 200px;
+    min-height: 64px;
+    margin: 0;
+  }
+
+  .episode-workbench,
+  .asset-panel {
+    min-height: 0;
+    max-height: none;
   }
 
   .asset-panel {
-    grid-column: 1 / -1;
-    min-height: 320px;
-    max-height: 420px;
     border-top: 1px solid var(--hairline);
     border-left: 0;
   }
 
-  .asset-panel__body {
-    overflow-y: auto;
+  .rail-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    padding: 12px;
+    gap: 10px;
   }
 
-  .episode-summary-card {
-    grid-template-columns: 180px minmax(0, 1fr);
+  .work-summary {
+    display: none;
+  }
+
+  .workbench-head {
+    min-height: 52px;
+    padding: 10px 14px;
+  }
+
+  .workbench-body,
+  .asset-panel__body {
+    overflow-y: auto;
   }
 
   .episode-summary__footer {
@@ -6069,63 +6209,22 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
   }
 
   .stage-card {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .stage-actions {
     min-height: 0;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
   }
 
   .stage-actions :deep(.el-button) {
-    min-width: 110px;
+    min-width: 0;
   }
 }
 
-@media (max-width: 980px) {
-  .production-board {
-    grid-template-columns: 1fr;
-    overflow-y: auto;
-  }
-
-  .episode-list {
-    display: flex;
-    overflow-x: auto;
-    padding-bottom: 12px;
-  }
-
-  .episode-item {
-    width: 220px;
-    flex: 0 0 220px;
-  }
-
-  .episode-rail {
-    min-height: auto;
-  }
-
-  .rail-head {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .work-summary {
-    display: none;
-  }
-
-  .workbench-body,
-  .asset-panel__body {
-    overflow: visible;
-  }
-
-  .asset-panel {
-    max-height: none;
-  }
-}
-
-@media (max-width: 720px) {
+@container works (max-width: 720px) {
   .workbench-head,
   .episode-summary__footer,
   .panel-head {
@@ -6141,8 +6240,7 @@ function openAssetEditor(asset: Asset, reference?: AssetReferenceTarget) {
     padding: 14px;
   }
 
-  .episode-summary-card,
-  .asset-preview {
+  .episode-summary-card {
     grid-template-columns: 1fr;
   }
 

@@ -3413,8 +3413,13 @@ async function runNextNode(options: { allowPending?: boolean } = {}) {
 <style scoped lang="scss">
 .series-v2 {
   display: flex;
+  flex: 1;
   flex-direction: column;
+  container: works / size;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--canvas);
 }
 
@@ -3423,16 +3428,23 @@ async function runNextNode(options: { allowPending?: boolean } = {}) {
   align-items: center;
   gap: var(--space-md);
   min-width: 0;
+  flex: 1;
+}
+
+.page-top__head > div {
+  min-width: 0;
 }
 
 .page-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 12px 16px;
   padding: 16px 24px;
   border-bottom: 1px solid var(--hairline);
   flex-shrink: 0;
+  min-width: 0;
 
   h1 {
     margin: 0;
@@ -3457,7 +3469,8 @@ async function runNextNode(options: { allowPending?: boolean } = {}) {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
-  flex: 0 0 auto;
+  min-width: 0;
+  flex: 1 1 280px;
 }
 
 .top-actions :deep(.el-button) {
@@ -3465,7 +3478,21 @@ async function runNextNode(options: { allowPending?: boolean } = {}) {
   white-space: nowrap;
 }
 
-@media (max-width: 980px) {
+@container works (max-width: 1280px) {
+  .page-top {
+    padding: 12px 16px;
+  }
+
+  .page-top h1 {
+    font-size: 18px;
+  }
+
+  .top-actions :deep(.el-button) {
+    min-width: 0;
+  }
+}
+
+@container works (max-width: 980px) {
   .page-top {
     align-items: flex-start;
     flex-direction: column;
@@ -3486,7 +3513,7 @@ async function runNextNode(options: { allowPending?: boolean } = {}) {
   }
 }
 
-@media (max-width: 560px) {
+@container works (max-width: 560px) {
   .top-actions :deep(.el-button) {
     flex: 1 1 calc(50% - 6px);
     min-width: 0;
