@@ -51,10 +51,14 @@ final class EcommerceBriefService
         $materials = array_values($unique);
         $service->providerImages(['user_id' => $userId, 'project_id' => $projectId], ['images' => array_column($materials, 'src')]);
         $video = $state['creative']['video'] ?? [];
-        $sceneIds = ['office' => '现代办公室', 'white-studio' => '简约白棚', 'cafe' => '时尚门店', 'living' => '家居客厅', 'beach' => '阳光海滩', 'grass' => '户外草地', 'street' => '城市街景', 'studio' => '摄影棚'];
+        $scenes = array_column($service->scenePresets(), null, 'id');
         $sceneId = $state['scene']['presetId'] ?? '';
-        $presetScene = !empty($state['creative']['useScene']) && ($state['scene']['source'] ?? 'presets') === 'presets' && isset($sceneIds[$sceneId])
-            ? ['id' => 'scene-preset-' . $sceneId, 'name' => $sceneIds[$sceneId], 'src' => '/admin/ecommerce-box/scenes/' . $sceneId . '.jpg', 'width' => 800, 'height' => 600] : null;
+        $presetScene = null;
+        if (!empty($state['creative']['useScene']) && ($state['scene']['source'] ?? 'presets') === 'presets' && $sceneId !== '') {
+            if (!isset($scenes[$sceneId])) abort(422, '内置场景不可用，请重新选择场景或上传自己的图片');
+            $presetScene = array_intersect_key($scenes[$sceneId], array_flip(['name', 'src', 'width', 'height']));
+            $presetScene['id'] = 'scene-preset-' . $sceneId;
+        }
         $context = ['materials' => $materials, 'idea' => EcommercePolicy::text($video['story']['idea'] ?? '', 2500),
             'duration' => $video['duration'] ?? 10, 'style' => $video['style'] ?? 'showcase',
             'aspect_ratio' => $video['aspect_ratio'] ?? '9:16', 'resolution' => $video['resolution'] ?? '720p',

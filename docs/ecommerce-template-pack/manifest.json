@@ -1,0 +1,222 @@
+[
+  {
+    "id": "main-beauty-podium",
+    "filename": "main-beauty-podium.jpg",
+    "name": "柔光美妆 · 台座主图",
+    "nameEn": "Soft Beauty / Podium Hero",
+    "purpose": "main",
+    "aspect": "1:1",
+    "minWidth": 1024,
+    "minHeight": 1024,
+    "promptFile": "main-beauty-podium.txt"
+  },
+  {
+    "id": "main-food-table",
+    "filename": "main-food-table.jpg",
+    "name": "食光餐桌 · 食品主图",
+    "nameEn": "Food Moments / Table Hero",
+    "purpose": "main",
+    "aspect": "1:1",
+    "minWidth": 1024,
+    "minHeight": 1024,
+    "promptFile": "main-food-table.txt"
+  },
+  {
+    "id": "main-tech-rim",
+    "filename": "main-tech-rim.jpg",
+    "name": "暗夜数码 · 轮廓主图",
+    "nameEn": "Night Tech / Rim Light Hero",
+    "purpose": "main",
+    "aspect": "1:1",
+    "minWidth": 1024,
+    "minHeight": 1024,
+    "promptFile": "main-tech-rim.txt"
+  },
+  {
+    "id": "main-home-window",
+    "filename": "main-home-window.jpg",
+    "name": "日光家居 · 空间主图",
+    "nameEn": "Sunlit Home / Window Hero",
+    "purpose": "main",
+    "aspect": "1:1",
+    "minWidth": 1024,
+    "minHeight": 1024,
+    "promptFile": "main-home-window.txt"
+  },
+  {
+    "id": "main-fashion-flatlay",
+    "filename": "main-fashion-flatlay.jpg",
+    "name": "服饰平铺 · 杂志主图",
+    "nameEn": "Fashion Flat Lay / Editorial Hero",
+    "purpose": "main",
+    "aspect": "1:1",
+    "minWidth": 1024,
+    "minHeight": 1024,
+    "promptFile": "main-fashion-flatlay.txt"
+  },
+  {
+    "id": "main-color-block",
+    "filename": "main-color-block.jpg",
+    "name": "撞色几何 · 活力主图",
+    "nameEn": "Color Block / Vibrant Hero",
+    "purpose": "main",
+    "aspect": "1:1",
+    "minWidth": 1024,
+    "minHeight": 1024,
+    "promptFile": "main-color-block.txt"
+  },
+  {
+    "id": "main-luxury-dark",
+    "filename": "main-luxury-dark.jpg",
+    "name": "黑金质感 · 精品主图",
+    "nameEn": "Dark Luxury / Premium Hero",
+    "purpose": "main",
+    "aspect": "1:1",
+    "minWidth": 1024,
+    "minHeight": 1024,
+    "promptFile": "main-luxury-dark.txt"
+  },
+  {
+    "id": "main-fresh-clean",
+    "filename": "main-fresh-clean.jpg",
+    "name": "清透洗护 · 清新主图",
+    "nameEn": "Fresh Care / Clean Hero",
+    "purpose": "main",
+    "aspect": "1:1",
+    "minWidth": 1024,
+    "minHeight": 1024,
+    "promptFile": "main-fresh-clean.txt"
+  },
+  {
+    "id": "detail-beauty-soft",
+    "filename": "detail-beauty-soft.jpg",
+    "name": "柔光护肤 · 品牌详情",
+    "nameEn": "Soft Skincare / Brand Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-beauty-soft.txt"
+  },
+  {
+    "id": "detail-beauty-clinical",
+    "filename": "detail-beauty-clinical.jpg",
+    "name": "净白秩序 · 洗护详情",
+    "nameEn": "Clean Order / Care Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-beauty-clinical.txt"
+  },
+  {
+    "id": "detail-food-warm",
+    "filename": "detail-food-warm.jpg",
+    "name": "暖食日常 · 食品详情",
+    "nameEn": "Warm Pantry / Food Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-food-warm.txt"
+  },
+  {
+    "id": "detail-food-fresh",
+    "filename": "detail-food-fresh.jpg",
+    "name": "清爽食集 · 饮品详情",
+    "nameEn": "Fresh Pantry / Beverage Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-food-fresh.txt"
+  },
+  {
+    "id": "detail-tech-grid",
+    "filename": "detail-tech-grid.jpg",
+    "name": "精密数码 · 网格详情",
+    "nameEn": "Precision Tech / Grid Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-tech-grid.txt"
+  },
+  {
+    "id": "detail-tech-dark",
+    "filename": "detail-tech-dark.jpg",
+    "name": "深蓝科技 · 质感详情",
+    "nameEn": "Deep Blue Tech / Premium Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-tech-dark.txt"
+  },
+  {
+    "id": "detail-home-linen",
+    "filename": "detail-home-linen.jpg",
+    "name": "棉麻日光 · 家居详情",
+    "nameEn": "Linen Daylight / Home Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-home-linen.txt"
+  },
+  {
+    "id": "detail-home-kitchen",
+    "filename": "detail-home-kitchen.jpg",
+    "name": "有序厨房 · 日用详情",
+    "nameEn": "Ordered Kitchen / Daily Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-home-kitchen.txt"
+  },
+  {
+    "id": "detail-fashion-editorial",
+    "filename": "detail-fashion-editorial.jpg",
+    "name": "服饰画报 · 穿搭详情",
+    "nameEn": "Fashion Editorial / Apparel Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-fashion-editorial.txt"
+  },
+  {
+    "id": "detail-bag-craft",
+    "filename": "detail-bag-craft.jpg",
+    "name": "鞋包工坊 · 工艺详情",
+    "nameEn": "Accessory Workshop / Craft Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-bag-craft.txt"
+  },
+  {
+    "id": "detail-aplus-light",
+    "filename": "detail-aplus-light.jpg",
+    "name": "明亮 A+ · 模块详情",
+    "nameEn": "Bright A+ / Modular Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-aplus-light.txt"
+  },
+  {
+    "id": "detail-brand-minimal",
+    "filename": "detail-brand-minimal.jpg",
+    "name": "极简品牌 · 留白详情",
+    "nameEn": "Minimal Brand / Spacious Detail",
+    "purpose": "detail",
+    "aspect": "2:3",
+    "minWidth": 1024,
+    "minHeight": 1536,
+    "promptFile": "detail-brand-minimal.txt"
+  }
+]

@@ -169,7 +169,6 @@ onBeforeUnmount(() => { disposed = true; stopDictation(); emit('working', false)
       <div v-if="brief.proposal" class="brief-proposal" data-testid="video-proposal"><h3>{{ t('视频方案') }}</h3><p>{{ brief.proposal }}</p></div>
       <el-input v-model="feedback" type="textarea" :rows="2" maxlength="2000" :disabled="expanding || busy" :aria-label="t('补充或修改要求')" :placeholder="t('有想调整的地方，直接说（选填）')" />
       <p v-if="stale && brief.proposal" class="story-warning">{{ t('需求已修改，请更新视频方案') }}</p>
-      <details v-if="brief.messages.length" class="brief-history"><summary>{{ t('对话记录') }}</summary><p v-for="(message, index) in brief.messages" :key="index"><strong>{{ message.role === 'user' ? t('我') : t('创作助手') }}</strong>{{ message.text }}</p><p v-for="(answer, key) in brief.answers" :key="key">{{ answer.question }}：{{ answer.answer }}</p></details>
     </div>
     <details v-if="story.script && brief?.proposal && !stale" class="story-review" :open="reviewOpen" @toggle="event => reviewOpen = (event.target as HTMLDetailsElement).open">
       <summary>{{ t('查看剧情与人物') }}</summary>
@@ -202,10 +201,6 @@ onBeforeUnmount(() => { disposed = true; stopDictation(); emit('working', false)
 .brief-conversation > .el-textarea { margin-top: 12px; }
 .brief-proposal { border-inline-start: 2px solid var(--brand-cyan); padding-inline-start: 12px; margin: 18px 0; }
 .brief-proposal p { font-size: 13px; line-height: 23px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0; }
-.brief-history { margin-top: 14px; font-size: 12px; color: var(--muted); }
-.brief-history summary { cursor: pointer; }
-.brief-history p { line-height: 20px; overflow-wrap: anywhere; }
-.brief-history strong { display: block; color: var(--body); margin-bottom: 4px; }
 .story-review { margin-top: 14px; border-top: 1px solid var(--hairline); padding-top: 14px; }
 .story-review > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .story-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }

@@ -73,6 +73,7 @@ const navItems = computed(() => {
 })
 
 function isActive(name: string) {
+  if (name === 'ecommerceBox') return route.name === 'ecommerceBox' || route.name === 'ecommerceProduct'
   return route.name === name
 }
 

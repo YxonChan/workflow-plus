@@ -43,8 +43,19 @@ final class EcommerceService
     public function projects(int $userId): array
     {
         self::ensureSchema();
-        return Db::name('ecommerce_projects')->where('user_id', $userId)->field('id,name,revision,update_time')
+        $projects = Db::name('ecommerce_projects')->where('user_id', $userId)->field('id,name,revision,state_json,update_time')
             ->order('update_time', 'desc')->limit(100)->select()->toArray();
+        return array_map(static function (array $project): array {
+            $state = self::decode($project['state_json'] ?? '{}');
+            $product = (array) ($state['product'] ?? []);
+            $uploads = array_values((array) ($product['uploads'] ?? []));
+            $results = array_values((array) ($product['results'] ?? []));
+            $cover = $uploads[0]['src'] ?? $results[0]['src'] ?? '';
+            unset($project['state_json']);
+            $project['cover_url'] = (string) $cover;
+            $project['product_name'] = (string) (($product['config']['name'] ?? '') ?: $project['name']);
+            return $project;
+        }, $projects);
     }
 
     public function create(int $userId, array $state, bool $import = false): array
@@ -80,6 +91,7 @@ final class EcommerceService
         $runs = Db::name('ecommerce_runs')->where('project_id', $id)->where('user_id', $userId)->order('id', 'asc')->select()->toArray();
         $jobs = Db::name('ecommerce_jobs')->where('project_id', $id)->where('user_id', $userId)->order('id', 'asc')->select()->toArray();
         return ['id' => $id, 'name' => $row['name'], 'revision' => (int) $row['revision'], 'state' => self::decode($row['state_json']),
+            'available_scene_ids' => array_column($this->scenePresets(), 'id'),
             'runs' => array_map(static fn (array $run): array => ['id' => (int) $run['id'], 'paused' => (bool) $run['paused'],
                 'snapshot' => self::decode($run['snapshot_json']), 'create_time' => $run['create_time']], $runs),
             'jobs' => array_map(static function (array $job): array {
@@ -148,6 +160,19 @@ final class EcommerceService
         $image = $asset->images()->where('id', $imageId)->where('url', '<>', '')->find();
         if (!$image) abort(404, '资产图片不存在');
         return $this->registerMedia($userId, $projectId, (string) $image->url, (string) $asset->name);
+    }
+
+    public function scenePresets(): array
+    {
+        $catalog = self::decode(file_get_contents(dirname(__DIR__) . '/resources/ecommerce_scenes.json'));
+        $available = [];
+        foreach ($catalog as $scene) {
+            $file = $this->presetFile('/admin/ecommerce-box/scenes/' . $scene['id'] . '.jpg');
+            $info = $file ? @getimagesize($file) : false;
+            if (!$info || min($info[0], $info[1]) < 300 || max($info[0], $info[1]) > 6000) continue;
+            $available[] = $scene + ['src' => '/admin/ecommerce-box/scenes/' . $scene['id'] . '.jpg', 'width' => $info[0], 'height' => $info[1]];
+        }
+        return $available;
     }
 
     private function presetFile(string $src): ?string
@@ -397,11 +422,20 @@ final class EcommerceService
         foreach ($request['images'] as $src) {
             $src = $this->source((int) $job['user_id'], $src);
             if (str_starts_with($src, '/admin/ecommerce-box/')) {
-                $media = $this->storeImage((int) $job['user_id'], (int) $job['project_id'], file_get_contents($this->presetFile($src)), basename($src));
+                $preset = $this->presetFile($src);
+                if ($preset === null) abort(422, '内置参考图不存在，请重新选择场景');
+                $binary = file_get_contents($preset);
+                if ($binary === false || $binary === '') abort(422, '内置参考图读取失败，请重新选择场景');
+                $info = @getimagesizefromstring($binary);
+                if (!$info || min($info[0], $info[1]) < 300 || max($info[0], $info[1]) > 6000) {
+                    abort(422, '内置参考图尺寸不合格，请更换场景或上传自己的图片');
+                }
+                $media = $this->storeImage((int) $job['user_id'], (int) $job['project_id'], $binary, basename($src));
                 $src = $media['src'];
             }
             $urls[] = $src;
         }
         return $urls;
     }
+
 }

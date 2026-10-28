@@ -60,7 +60,14 @@ const router = createRouter({
     {
       path: '/ecommerce-box',
       name: 'ecommerceBox',
+      component: () => import('@/views/EcommerceHomeView.vue'),
+      meta: { titleKey: '电商宝盒', productionOnly: true },
+    },
+    {
+      path: '/ecommerce-box/product/:id',
+      name: 'ecommerceProduct',
       component: () => import('@/views/EcommerceBoxView.vue'),
+      props: route => ({ productId: String(route.params.id) }),
       meta: { titleKey: '电商宝盒', productionOnly: true },
     },
     {

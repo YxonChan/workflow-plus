@@ -1,9 +1,11 @@
 import styleRules from '@/utils/styleParameterRules.json'
 import { promptAssistantZh } from './promptAssistant'
 import { ecommerceZh } from './ecommerce'
+import { ecommerceStyleZh } from './ecommerceStyles'
 
 export default {
   ...ecommerceZh,
+  ...ecommerceStyleZh,
   '文本输入': '文本输入',
   '缓存文本输入': '缓存文本输入',
   '图片输入': '图片输入',

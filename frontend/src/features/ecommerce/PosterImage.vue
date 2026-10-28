@@ -7,7 +7,8 @@ const rendered = ref(''), failed = ref(false)
 let epoch = 0
 watch(() => [props.src, props.poster, props.large], async () => {
   const current = ++epoch; rendered.value = ''; failed.value = false
-  if (!props.poster?.headline.trim()) return
+  const poster = props.poster
+  if (!poster || (!poster.headline.trim() && !poster.subtitle.trim() && !poster.sellingPoints.length && !Object.values(poster.facts || {}).some(value => value.trim()))) return
   try {
     const canvas = await renderPoster(props.src, props.poster, props.large ? 1600 : 640)
     if (current === epoch) rendered.value = canvas.toDataURL('image/png')

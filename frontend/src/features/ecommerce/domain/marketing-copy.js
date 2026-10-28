@@ -2,7 +2,11 @@ import { getStylePreset } from './style-presets.js';
 import { campaignLayout } from './campaign-layout.js';
 
 export function createMarketingCopy() {
-  return { enabled: false, headline: '', subtitle: '', sellingPoints: [] };
+  return { enabled: false, headline: '', subtitle: '', sellingPoints: [], facts: { price: '', originalPrice: '', discount: '', certification: '', sales: '', cta: '' } };
+}
+
+export function hasMarketingText(copy) {
+  return [copy.headline, copy.subtitle, ...copy.sellingPoints].some(text => text.trim());
 }
 
 export function validateMarketingCopy(value) {
@@ -10,19 +14,24 @@ export function validateMarketingCopy(value) {
   if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean') throw new Error('宣传文案格式无效');
   const text = (input, max) => { if (typeof input !== 'string' || [...input].length > max) throw new Error('宣传文案过长或无效'); return input; };
   if (!Array.isArray(value.sellingPoints) || value.sellingPoints.length > 3) throw new Error('宣传卖点最多三条');
-  return { enabled: value.enabled, headline: text(value.headline, 20), subtitle: text(value.subtitle, 40), sellingPoints: value.sellingPoints.map(point => text(point, 16)).filter(point => point.trim()) };
+  const rawFacts = value.facts === undefined ? createMarketingCopy().facts : value.facts;
+  if (!rawFacts || typeof rawFacts !== 'object') throw new Error('商品信息格式无效');
+  const factText = (key, max) => text(rawFacts[key] === undefined ? '' : rawFacts[key], max);
+  return { enabled: value.enabled, headline: text(value.headline, 20), subtitle: text(value.subtitle, 40), sellingPoints: value.sellingPoints.map(point => text(point, 16)).filter(point => point.trim()), facts: { price: factText('price', 20), originalPrice: factText('originalPrice', 20), discount: factText('discount', 16), certification: factText('certification', 24), sales: factText('sales', 24), cta: factText('cta', 16) } };
 }
 
 export function validatePoster(value) {
   const copy = validateMarketingCopy({ ...value, enabled: true });
   if (!getStylePreset(value?.presetId)) throw new Error('文案版式无效');
   if (value.layout !== undefined && !['header', 'split', 'footer'].includes(value.layout)) throw new Error('文案版式无效');
-  return { headline: copy.headline, subtitle: copy.subtitle, sellingPoints: copy.sellingPoints, presetId: value.presetId, ...(value.layout ? { layout: value.layout } : {}) };
+  return { headline: copy.headline, subtitle: copy.subtitle, sellingPoints: copy.sellingPoints, facts: copy.facts, presetId: value.presetId, ...(value.layout ? { layout: value.layout } : {}) };
 }
 
 export function posterSnapshot(project, pageKey = '') {
   const copy = validateMarketingCopy(project.creative.copy);
-  if (!copy.enabled || !copy.headline.trim() || pageKey === 'H1' || project.integration?.goal === 'tryon'
+  const standalonePoster = (project.integration?.goal || project.creative.format) === 'poster';
+  const hasFacts = standalonePoster && Object.values(copy.facts).some(value => value.trim());
+  if (!copy.enabled || (!hasMarketingText(copy) && !hasFacts) || pageKey === 'H1' || project.integration?.goal === 'tryon'
     || (pageKey === 'M1' && getStylePreset(project.creative.presetId)?.whiteBackground)) return null;
   const page = campaignLayout(pageKey);
   const pointIndex = ({ H2: 0, H4: 1, D2: 0, D3: 1, D4: 2 })[pageKey];
@@ -30,5 +39,8 @@ export function posterSnapshot(project, pageKey = '') {
   const headline = pageKey && !['M1', 'D1', 'H5', 'D9'].includes(pageKey) ? point || page.headline : copy.headline;
   const subtitle = pageKey && !['M1', 'D1', 'H5', 'D9'].includes(pageKey) ? '' : copy.subtitle;
   const sellingPoints = pageKey ? (point ? [] : copy.sellingPoints.slice(0, 1)) : copy.sellingPoints;
-  return validatePoster({ headline, subtitle, sellingPoints, presetId: project.creative.presetId, layout: page.layout });
+  // Structured price/trust claims belong to standalone posters only. Keep old
+  // detail/campaign copy compatible without leaking storefront facts into them.
+  const facts = standalonePoster ? copy.facts : undefined;
+  return validatePoster({ headline, subtitle, sellingPoints, facts, presetId: project.creative.presetId, layout: page.layout });
 }

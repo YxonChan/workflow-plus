@@ -25,6 +25,7 @@ export function useEcommerce() {
   const jobs = ref<Job[]>([])
   const runs = ref<Run[]>([])
   const models = ref<ModelConfig[]>([])
+  const availableSceneIds = ref<string[]>([])
   const loading = ref(true)
   const dirty = ref(false)
   const saving = ref(false)
@@ -42,6 +43,7 @@ export function useEcommerce() {
   const isOfficial = computed(() => imageModel.value?.model_id.endsWith('-official') ?? false)
 
   function integrate(detail: ProjectDetail, initial = false) {
+    availableSceneIds.value = detail.available_scene_ids || []
     if (initial) {
       hydrating = true
       const state = validateProject(detail.state)
@@ -156,15 +158,16 @@ export function useEcommerce() {
     if (!disposed) pollTimer = setTimeout(poll, jobs.value.some(job => ['running', 'queued'].includes(job.status)) ? 4000 : 15000)
   }
 
-  async function init() {
+  async function init(initialProjectId?: number) {
     loading.value = true
     try {
       const [groups, list] = await Promise.all([listGrouped(), ecommerce.list()])
       models.value = groups.flatMap(group => group.models)
       projects.value = list
       const last = Number(localStorage.getItem(`ecommerce:last:${auth.user?.id}`))
-      const chosen = list.find(item => Number(item.id) === last) || list[0]
-      if (chosen) await open(Number(chosen.id)); else await create()
+      const chosen = initialProjectId ? list.find(item => Number(item.id) === initialProjectId) : list.find(item => Number(item.id) === last) || list[0]
+      if (initialProjectId) await open(initialProjectId)
+      else if (chosen) await open(Number(chosen.id)); else await create()
       void poll()
     } finally { loading.value = false }
   }
@@ -177,9 +180,10 @@ export function useEcommerce() {
       ? { size: `${Math.round(width / 16) * 16}x${Math.round(height / 16) * 16}`, quality: project.value.integration?.officialQuality || 'high' }
       : { size: ratio, aspect_ratio: ratio, resolution: project.value[kind].quality, quality: 'high' }
     const input = imageReferenceInput(request)
+    const snapshot = uiSnapshot()
     return Array.from({ length: request.n }, (_, index) => ({ kind, mode: 'image', title: request.n > 1 ? `${title} ${index + 1}` : title,
       page_key: pageKey || request.campaign?.shotId || '', model_config_id: imageModel.value!.id,
-      request: { prompt: input.prompt, images: input.images, options, ...(kind === 'creative' ? { creative_goal: request.design?.purpose || storefrontGoal(project.value) } : {}), original: { ...clone(request), prompt: input.prompt, n: 1 } } }))
+      request: { prompt: input.prompt, images: input.images, options, ...(kind === 'creative' ? { creative_goal: request.design?.purpose || storefrontGoal(project.value) } : {}), original: { ...clone(request), prompt: input.prompt, n: 1, ui_snapshot: snapshot } } }))
   }
 
   function build(kind: SectionKind): PlanItem[] {
@@ -193,16 +197,26 @@ export function useEcommerce() {
       p.creative.video.model = model.model_id
       const req = storefrontVideoRequest(p)
       return [{ kind, mode: 'video', title: p.product.config.name || t('电商视频'), page_key: 'video', model_config_id: model.id,
-        request: { prompt: req.prompt, images: req.image_with_roles.map(item => item.url), original: p.integration?.videoBrief ? { brief_version: p.integration.videoBrief.version } : {}, creative_goal: 'video', video_style: p.creative.video.style, options: {
+        request: { prompt: req.prompt, images: req.image_with_roles.map(item => item.url), original: { ...(p.integration?.videoBrief ? { brief_version: p.integration.videoBrief.version } : {}), ui_snapshot: uiSnapshot() }, creative_goal: 'video', video_style: p.creative.video.style, options: {
           duration: req.duration, aspect_ratio: req.aspect_ratio, resolution: req.resolution, generate_audio: req.generate_audio } } }]
     }
     return storefrontImageRequests(p).flatMap(item => imageItems(kind, item.request, item.title, item.pageKey))
+  }
+
+  function uiSnapshot() {
+    const p = project.value
+    // Keep configuration snapshots bounded; never recursively embed past result requests.
+    const section = (value: Project['model']) => ({ ...clone(value), results: [], activeResultId: '' })
+    return { userPrompt: p.creative.mode === 'video' ? p.creative.video.story.idea || p.creative.notes : p.creative.notes,
+      creative: { ...clone(p.creative), results: [], activeResultId: '', campaign: { ...clone(p.creative.campaign), activeRun: null }, video: { ...clone(p.creative.video), tasks: [], activeTaskId: '' } },
+      model: section(p.model), scene: section(p.scene), product: section(p.product), productConfig: clone(p.product.config),
+      integration: { goal: storefrontGoal(p), imageModelId: p.integration?.imageModelId, videoModelId: p.integration?.videoModelId, officialQuality: p.integration?.officialQuality } }
   }
 
   function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value) { event.preventDefault(); event.returnValue = '' } }
   window.addEventListener('beforeunload', beforeUnload)
   onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearTimeout(pollTimer); window.removeEventListener('beforeunload', beforeUnload) })
   function notify(error: unknown) { ElMessage.error(errorText(error)) }
-  return { projects, project, id, revision, jobs, runs, models, loading, dirty, saving, saveError, imageModels, videoModels,
+  return { projects, project, id, revision, jobs, runs, models, availableSceneIds, loading, dirty, saving, saveError, imageModels, videoModels,
     imageModel, isOfficial, save, open, create, refresh, init, integrate, imageItems, build, notify }
 }

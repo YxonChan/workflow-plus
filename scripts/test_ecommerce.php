@@ -22,6 +22,64 @@ rejects(fn () => EcommercePolicy::request(['prompt' => 'x', 'images' => array_fi
 rejects(fn () => EcommercePolicy::request(['prompt' => 'x', 'options' => ['size' => ['bad']]], 'image'), 'structured values cannot enter scalar model parameters');
 rejects(fn () => EcommercePolicy::imageOptions(['size' => '1:1'], 'gpt-image-2.5-flare-official'), 'Official rejects ratio instead of pixels');
 
+$templateCatalog = \app\support\EcommerceImageDesign::catalog();
+foreach ([['subtitle' => '自选副标题'], ['sellingPoints' => ['手工卖点']], ['facts' => ['price' => '¥59.90']]] as $copy) {
+    $manualPoster = ['creative_goal' => 'poster', 'images' => [], 'original' => [
+        'design' => ['purpose' => 'poster', 'presetId' => 'poster-hero'],
+        'poster' => array_replace(['headline' => '', 'subtitle' => '', 'sellingPoints' => [], 'presetId' => 'poster-hero'], $copy),
+    ]];
+    check(\app\support\EcommerceImageDesign::validate($manualPoster, '')['purpose'] === 'poster', 'manual copy accepts ' . array_key_first($copy) . ' without an AI headline');
+    $manualPoster['original']['poster']['headline'] = str_repeat('字', 21);
+    rejects(fn () => \app\support\EcommerceImageDesign::validate($manualPoster, ''), 'manual copy still enforces headline length');
+}
+$retiredStyles = array_filter($templateCatalog['styles'], static fn (array $style): bool => ($style['retired'] ?? false) === true);
+check(count($retiredStyles) === 12, 'exactly four old main and eight old detail templates are retired');
+foreach ($retiredStyles as $presetId => $style) {
+    check(($style['enabled'] ?? true) === false, $presetId . ' is unavailable for new work');
+    $purpose = in_array('main', $style['purposes'], true) ? 'main' : 'detail';
+    $reference = '/admin/ecommerce-box/styles/' . $presetId . '.jpg';
+    $request = ['creative_goal' => $purpose, 'images' => [$reference], 'prompt' => '历史成品微调', 'original' => [
+        'mode' => 'compose', 'n' => 1, 'size' => $purpose === 'main' ? '2048x2048' : '1365x2048', 'styleReference' => $reference,
+        'design' => ['purpose' => $purpose, 'presetId' => $presetId, 'enabled' => true, 'retired' => false],
+    ]];
+    if ($purpose === 'main') $request['original']['campaign'] = ['shotId' => 'M1', 'presetId' => $presetId];
+    else $request['original']['design']['layout'] = 'template';
+    $pageKey = $purpose === 'main' ? 'M1' : '';
+    rejects(fn () => \app\support\EcommerceImageDesign::validate($request, $pageKey), $presetId . ' cannot be reactivated by client flags');
+    $request['original']['mode'] = 'edit';
+    $validated = \app\support\EcommerceImageDesign::validate($request, $pageKey);
+    check($validated['presetId'] === $presetId, $presetId . ' keeps its historical edit identity');
+    $edited = \app\support\EcommerceSkills::apply($request, 'image', 'creative', $pageKey);
+    check(count($edited['skill_snapshot']) === 1, $presetId . ' edits do not force a new composition');
+    if ($presetId === 'bold-color') {
+        check($validated['whiteBackground'] && str_contains(implode('\n', \app\support\EcommerceImageDesign::rules($validated, $pageKey)), '不绘制人物、场景、营销文案'), 'archived pure-white main retains its original purpose rules');
+    }
+}
+foreach ($templateCatalog['styles'] as $presetId => $style) {
+    if (($style['templatePack'] ?? '') !== 'commerce-v1') continue;
+    $purpose = $style['purposes'][0];
+    $reference = '/admin/ecommerce-box/styles/' . $presetId . '.jpg';
+    $design = ['purpose' => $purpose, 'presetId' => $presetId, 'layout' => $purpose === 'detail' ? 'template' : ''];
+    $templateRequest = ['creative_goal' => $purpose, 'images' => [$reference], 'prompt' => '商品测试', 'original' => [
+        'design' => $design, 'styleReference' => $reference, 'mode' => 'compose', 'n' => 1,
+        'size' => $purpose === 'detail' ? '1365x2048' : '2048x2048',
+    ]];
+    if ($purpose === 'main') $templateRequest['original']['campaign'] = ['shotId' => 'M1', 'presetId' => $presetId];
+    $pageKey = $purpose === 'main' ? 'M1' : '';
+    if (($style['enabled'] ?? true) === false) {
+        $templateRequest['original']['design']['enabled'] = true;
+        $templateRequest['original']['design']['generationRules'] = ['untrusted-template-rule'];
+        rejects(fn () => \app\support\EcommerceImageDesign::validate($templateRequest, $pageKey), $presetId . ' cannot be activated by the client before image import');
+    }
+    // Disabling a template for new work must not invalidate frozen historical edits.
+    $templateRequest['original']['mode'] = 'edit';
+    $validatedDesign = \app\support\EcommerceImageDesign::validate($templateRequest, $pageKey);
+    $rules = \app\support\EcommerceImageDesign::rules($validatedDesign, $pageKey);
+    check(in_array(end($style['generationRules']), $rules, true) && !in_array('untrusted-template-rule', $rules, true), $presetId . ' uses only server-maintained layout methods');
+    $edited = \app\support\EcommerceSkills::apply($templateRequest, 'image', 'creative', $pageKey);
+    check(!str_contains($edited['prompt'], '本模板构图：') && count($edited['skill_snapshot']) === 1, $presetId . ' edits preserve the frozen composition without reapplying a template');
+}
+
 // Only the uniquely named disposable database is mutated. Real models/queues are never used.
 $originalConfig = $app->config->get('database');
 $admin = Db::connect();
@@ -90,7 +148,7 @@ try {
             $designItem['request']['creative_goal'] = $purpose['id'];
             $designItem['request']['original']['design'] = ['purpose' => $purpose['id'], 'presetId' => $presetId];
             if ($purpose['pageIds'] !== []) $designItem['request']['original']['campaign'] = ['shotId' => $designItem['page_key'], 'presetId' => $presetId];
-            if (in_array($purpose['id'], $style['purposes'], true)) {
+            if (($style['enabled'] ?? true) !== false && in_array($purpose['id'], $style['purposes'], true)) {
                 $designPlan = $service->plan(801, $id, [$designItem]);
                 check($designPlan['count'] === 1, $purpose['id'] . ' accepts ' . $presetId);
             } else {
@@ -99,7 +157,7 @@ try {
         }
     }
     foreach ($designCatalog['styles'] as $presetId => $style) {
-        if (!in_array('detail', $style['purposes'], true) || empty($style['detailLayout'])) continue;
+        if (($style['enabled'] ?? true) === false || !in_array('detail', $style['purposes'], true) || empty($style['detailLayout'])) continue;
         $template = $item;
         $template['page_key'] = '';
         $template['request']['creative_goal'] = 'detail';
@@ -132,14 +190,13 @@ try {
     }
     $singleMain = $item; $singleMain['page_key'] = 'M1';
     $singleMain['request']['creative_goal'] = 'main';
-    $singleMain['request']['original']['design'] = ['purpose' => 'main', 'presetId' => 'bold-color'];
-    $singleMain['request']['original']['campaign'] = ['shotId' => 'M1', 'presetId' => 'bold-color'];
-    $whitePlan = $service->plan(801, $id, [$singleMain]);
-    check(str_contains($whitePlan['items'][0]['request']['prompt'], '不绘制人物、场景、营销文案'), 'white main purpose overrides incompatible decorations');
-    check($service->plan(801, $id, $whitePlan['items'])['items'][0]['request']['prompt'] === $whitePlan['items'][0]['request']['prompt'], 'purpose rules are stable on re-quote');
+    $singleMain['request']['original']['design'] = ['purpose' => 'main', 'presetId' => 'main-color-block'];
+    $singleMain['request']['original']['campaign'] = ['shotId' => 'M1', 'presetId' => 'main-color-block'];
+    $mainPlan = $service->plan(801, $id, [$singleMain]);
+    check(str_contains($mainPlan['items'][0]['request']['prompt'], '一张方形商品主图'), 'new main template receives single square image rules');
+    check($service->plan(801, $id, $mainPlan['items'])['items'][0]['request']['prompt'] === $mainPlan['items'][0]['request']['prompt'], 'purpose rules are stable on re-quote');
     $forgedWhite = $singleMain;
-    $forgedWhite['request']['original']['design'] = ['purpose' => 'main', 'presetId' => 'sport', 'whiteBackground' => true];
-    $forgedWhite['request']['original']['campaign']['presetId'] = 'sport';
+    $forgedWhite['request']['original']['design'] = ['purpose' => 'main', 'presetId' => 'main-color-block', 'whiteBackground' => true];
     $forgedWhitePlan = $service->plan(801, $id, [$forgedWhite]);
     check(in_array('builtin:product-detail-layout', array_column($forgedWhitePlan['items'][0]['request']['skill_snapshot'], 'id'), true), 'client cannot replace catalog rules by forging a white-background flag');
     $wrongPage = $singleMain; $wrongPage['page_key'] = 'D1';
@@ -250,6 +307,22 @@ try {
     check(Db::name('ecommerce_media')->where('project_id', $imported['id'])->count() === 1, 'identical embedded images are stored once');
     check($imported['state']['creative']['video']['tasks'] === [] && $imported['state']['creative']['video']['activeTaskId'] === '', 'legacy video tasks are discarded before media ownership validation');
     check(is_file(invoke($service, 'presetFile', '/admin/ecommerce-box/styles/technology.jpg')), 'preset images resolve in built or source public directories');
+    $scenePresets = $service->scenePresets();
+    check(count($scenePresets) === 10, 'all ten generated built-in scenes exist with provider-compatible dimensions');
+    foreach ($scenePresets as $scene) {
+        check(min($scene['width'], $scene['height']) >= 300 && max($scene['width'], $scene['height']) <= 6000,
+            'scene dimensions are valid: ' . $scene['id']);
+    }
+    check($service->detail(801, $id)['available_scene_ids'] === array_column($scenePresets, 'id'), 'project response lists only available scene files');
+    $sceneImages = $service->providerImages(['user_id' => 801, 'project_id' => $id], ['images' => ['/admin/ecommerce-box/scenes/street.jpg']]);
+    $createdFiles[] = $sceneImages[0];
+    $sceneInfo = getimagesize($app->getRootPath() . 'public' . $sceneImages[0]);
+    check(min($sceneInfo[0], $sceneInfo[1]) >= 300, 'provider receives the full-size street scene rather than a gallery thumbnail');
+    $errorController = new \app\controller\SeriesController($app);
+    $upstreamError = 'image[2]: Width must be between 300px and 6000px.';
+    check(invoke($errorController, 'extractVideoErrorFromResponse', ['status' => 'failed', 'error' => ['message' => $upstreamError]], 'failed') === $upstreamError,
+        'top-level video error detail is shown instead of failed');
+    check(invoke($errorController, 'extractVideoErrorFromResponse', ['task' => ['error' => ['message' => 'nested error']]], 'failed') === 'nested error', 'nested provider errors remain supported');
     rejects(fn () => $service->plan(801, $id, [array_replace_recursive($item, ['request' => ['images' => ['/admin/ecommerce-box/styles/../technology.jpg']]])]), 'preset references cannot traverse directories');
     check($frozen === EcommerceService::decode(Db::name('ecommerce_jobs')->where('id', $done['id'])->value('request_json')), 'worker never changes frozen prompts and references');
     $videoItem = ['kind' => 'creative', 'mode' => 'video', 'title' => 'Video', 'page_key' => 'video', 'model_config_id' => 4,

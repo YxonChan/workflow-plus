@@ -2,8 +2,9 @@ export type SectionKind = 'model' | 'product' | 'scene' | 'creative'
 export interface Mark { id: string; label: number; x: number; y: number; width: number; height: number; shape?: 'point' }
 export interface Marking { mode: 'auto' | 'manual'; imageId: string; marks: Mark[]; annotatedSrc?: string }
 export interface Media { id: string; name: string; src: string; width: number; height: number }
-export interface MarketingCopy { enabled: boolean; headline: string; subtitle: string; sellingPoints: string[] }
-export interface Poster { headline: string; subtitle: string; sellingPoints: string[]; presetId: string; layout?: 'header' | 'split' | 'footer' }
+export interface MarketingFacts { price: string; originalPrice: string; discount: string; certification: string; sales: string; cta: string }
+export interface MarketingCopy { enabled: boolean; headline: string; subtitle: string; sellingPoints: string[]; facts?: MarketingFacts }
+export interface Poster { headline: string; subtitle: string; sellingPoints: string[]; presetId: string; layout?: 'header' | 'split' | 'footer'; facts?: MarketingFacts }
 export interface CopyDraft { headline: string; subtitle: string; selling_points: string[]; product_name: string; observations: string[]; analyzed_images: number }
 export interface BriefMaterial extends Media { kind: 'product' | 'person' | 'scene' | 'unknown' | 'ignore'; summary: string }
 export interface VideoBrief {
@@ -14,6 +15,7 @@ export interface VideoBrief {
   product_ids?: string[]; scene?: BriefMaterial | null; reference_urls?: string[]
 }
 export interface ImageRequest {
+  ui_snapshot?: Record<string, unknown>
   prompt: string; images: string[]; mode: 'compose' | 'edit'; size: string; n: number
   design?: { purpose: string; presetId: string; layout?: 'template' }
   referenceRoles?: string[]; campaign?: { runId: string; shotId: string; role: string; title: string; styleLock: string; referenceRoles: string[] }
@@ -60,7 +62,7 @@ export interface Project {
   canvas: { viewport: null; positions: Record<string, { x: number; y: number }> }
   integration?: { imageModelId?: number; videoModelId?: number; officialQuality?: string; hiddenJobs?: number[]; goal?: string; useProcessedProduct?: boolean; posterOverrides?: Record<string, Poster | null>; savedPosters?: Record<string, string>; videoBrief?: { version: number; signature: string; productIds: string[]; scene: Media | null } }
 }
-export interface Preset { id: string; name: string; cover: string; category: string; prompt?: string; description?: string; type?: string; notes?: string; purposes?: string[]; whiteBackground?: boolean; detailLayout?: string }
+export interface Preset { id: string; name: string; cover: string; category: string; prompt?: string; description?: string; type?: string; notes?: string; purposes?: string[]; whiteBackground?: boolean; detailLayout?: string; enabled?: boolean; retired?: boolean; palette?: string[]; lighting?: string }
 export interface JobRequest { prompt: string; images: string[]; options: Record<string, string | number | boolean>; original: ImageRequest | Record<string, unknown>; model_id?: string; creative_goal?: string; video_style?: 'showcase' | 'ugc'; skill_snapshot?: { id: string; version: string }[] }
 export interface PlanItem { kind: SectionKind; mode: 'image' | 'video'; title: string; page_key: string; model_config_id: number; request: JobRequest }
 export interface Job extends Omit<PlanItem, 'request'> {
@@ -69,6 +71,6 @@ export interface Job extends Omit<PlanItem, 'request'> {
   request: JobRequest; result_url: string; error_message: string; asset_id?: number; create_time: string; update_time: string
 }
 export interface Run { id: number; paused: boolean; snapshot: { credits: number; estimated: boolean; items: PlanItem[] }; create_time: string }
-export interface ProjectDetail { id: number; name: string; revision: number; state: Project; jobs: Job[]; runs: Run[] }
-export interface ProjectBrief { id: number; name: string; revision: number; update_time: string }
+export interface ProjectDetail { id: number; name: string; revision: number; state: Project; jobs: Job[]; runs: Run[]; available_scene_ids?: string[] }
+export interface ProjectBrief { id: number; name: string; product_name?: string; cover_url?: string; revision: number; update_time: string }
 export interface Quote { credits: number; estimated: boolean; count: number; items: PlanItem[] }

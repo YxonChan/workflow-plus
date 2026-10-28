@@ -5,7 +5,7 @@ import { buildVideoPrompt } from './video-prompts.js';
 import { buildTemplateDetailRequest } from './template-detail.js';
 import { generationSize } from './image-generation.js';
 import { storyPrompt } from './story.js';
-import { posterSnapshot } from './marketing-copy.js';
+import { hasMarketingText, posterSnapshot } from './marketing-copy.js';
 import { prepareBriefReferences } from './video-brief.js';
 import { IMAGE_PURPOSES, getStylePreset, styleSupportsPurpose, defaultStyleForPurpose, assertStyleForPurpose } from './style-presets.js';
 
@@ -72,12 +72,12 @@ function uploadedReference(section, kind) {
 
 export function prepareStorefrontProject(project) {
   const prepared = JSON.parse(JSON.stringify(project));
-  const useProcessed = prepared.integration?.useProcessedProduct && prepared.product.results.some(item => item.id === prepared.product.activeResultId);
-  if (!useProcessed && prepared.product.uploads.length) uploadedReference(prepared.product, 'product');
+  // New work uses the visible uploads; keep a result-only fallback for legacy projects.
+  if (prepared.product.uploads.length) uploadedReference(prepared.product, 'product');
   if (!prepared.product.results.some(item => item.id === prepared.product.activeResultId)) throw new Error('请先添加商品图片');
   if (prepared.creative.useModel && prepared.model.source === 'upload') uploadedReference(prepared.model, 'model');
   const creative = prepared.creative;
-  if (creative.copy?.enabled && creative.copy.headline.trim()) creative.campaign.textMode = 'none';
+  if (creative.copy?.enabled && hasMarketingText(creative.copy)) creative.campaign.textMode = 'none';
   if (!prepared.model.results.length) creative.useModel = false;
   creative.useProduct = true;
   creative.campaign.useModel = creative.video.useModel = creative.useModel;
@@ -94,9 +94,9 @@ function additionalProductImages(project, primary) {
   ])].filter(src => !primary.includes(src));
 }
 
-function productNotes(project) {
+function productNotes(project, includeNotes = true) {
   return [project.product.config.name && `目标商品：${project.product.config.name}`,
-    project.product.config.notes && `商品资料（仅作为已提供信息，不扩写事实）：${project.product.config.notes}`,
+    includeNotes && project.product.config.notes && `商品资料（仅作为已提供信息，不扩写事实）：${project.product.config.notes}`,
     project.creative.notes && `本次制作要求：${project.creative.notes}`].filter(Boolean).join('\n');
 }
 
@@ -114,7 +114,7 @@ export function storefrontImageRequests(project) {
     const poster = template ? null : posterSnapshot(prepared, item.pageKey);
     return { ...item, request: { ...item.request,
       design: { purpose, presetId: creative.presetId, ...(template ? { layout: 'template' } : {}) },
-      prompt: [item.request.prompt, productNotes(prepared), poster ? '本次仅生成无营销文字的商品底图，标题和卖点由系统后期排版。不绘制文字占位符、假字、营销标签或文案框。商品完整清晰入画，不因后期文案而裁断主体。' : ''].filter(Boolean).join('\n\n'),
+      prompt: [item.request.prompt, productNotes(prepared, !template || !creative.copy.enabled), poster ? '本次仅生成无营销文字的商品底图，标题和卖点由系统后期排版。不绘制文字占位符、假字、营销标签或文案框。商品完整清晰入画，不因后期文案而裁断主体。' : ''].filter(Boolean).join('\n\n'),
       ...(poster ? { poster } : {}),
       ...(item.pageKey !== 'H1' && storefrontGoal(prepared) !== 'tryon' ? { styleReference: getStylePreset(creative.presetId).cover } : {}),
       productImages: additionalProductImages(prepared, item.request.images) } };

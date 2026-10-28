@@ -26,7 +26,14 @@ final class EcommerceImageDesign
         if (!$style || !in_array($purpose, $style['purposes'], true) || $purpose !== $request['creative_goal']) {
             throw new InvalidArgumentException('图片风格与用途不匹配，请重新选择');
         }
+        if (($style['enabled'] ?? true) === false && ($request['original']['mode'] ?? '') !== 'edit') {
+            throw new InvalidArgumentException(($style['retired'] ?? false) ? '图片模板已下架，请重新选择' : '图片模板尚未就绪，请选择其他模板');
+        }
         $definition = array_column($catalog['purposes'], null, 'id')[$purpose];
+        // Poster copy is rendered by the application after the model returns the
+        // clean product image. Validate the frozen snapshot here so malformed or
+        // unexpectedly large user-provided claims cannot enter a queued job.
+        self::validatePosterSnapshot($request['original']['poster'] ?? null);
         $campaign = $request['original']['campaign'] ?? null;
         $layout = $design['layout'] ?? '';
         if (!in_array($layout, ['', 'template'], true) || ($layout === 'template' && $purpose !== 'detail')) {
@@ -58,7 +65,47 @@ final class EcommerceImageDesign
         return ['purpose' => $purpose, 'presetId' => $design['presetId'], 'layout' => $layout, 'whiteBackground' => (bool) ($style['whiteBackground'] ?? false)];
     }
 
+    private static function validatePosterSnapshot($poster): void
+    {
+        if ($poster === null) return;
+        if (!is_array($poster)) throw new InvalidArgumentException('宣传海报文案格式无效');
+        $text = static function ($value, int $limit, bool $required = false): void {
+            if (!is_string($value) || mb_strlen($value) > $limit || ($required && trim($value) === '')) {
+                throw new InvalidArgumentException('宣传海报文案格式无效');
+            }
+        };
+        $text($poster['headline'] ?? '', 20);
+        $text($poster['subtitle'] ?? '', 40);
+        $points = $poster['sellingPoints'] ?? [];
+        if (!is_array($points) || !array_is_list($points) || count($points) > 3) {
+            throw new InvalidArgumentException('宣传海报卖点格式无效');
+        }
+        foreach ($points as $point) $text($point, 16, true);
+        if (!isset($poster['facts'])) return; // Legacy snapshots predate structured facts.
+        $facts = $poster['facts'];
+        if (!is_array($facts) || array_is_list($facts)) {
+            throw new InvalidArgumentException('宣传海报商品信息格式无效');
+        }
+        foreach ([
+            'price' => 20, 'originalPrice' => 20, 'discount' => 16,
+            'certification' => 24, 'sales' => 24, 'cta' => 16,
+        ] as $key => $limit) {
+            if (array_key_exists($key, $facts)) $text($facts[$key], $limit);
+        }
+    }
+
     public static function rules(array $design, string $pageKey): array
+    {
+        $rules = self::purposeRules($design, $pageKey);
+        $style = self::catalog()['styles'][$design['presetId']] ?? [];
+        // Only the server-maintained catalog can contribute template-specific methods.
+        if (!(($design['purpose'] === 'main' && $design['whiteBackground']) || $pageKey === 'H1')) {
+            foreach ($style['generationRules'] ?? [] as $rule) $rules[] = $rule;
+        }
+        return $rules;
+    }
+
+    private static function purposeRules(array $design, string $pageKey): array
     {
         if (($design['layout'] ?? '') === 'template') {
             return ['当前任务只输出一张完整商品详情图：所选模板的主视觉、细节、场景和文字模块在同一张竖版画布内排版，参考其整体结构、区块比例和视觉层级。不得拆成独立分页、套图任务或只生成其中一块商品照片；文字仅采用已经提供且允许使用的文案，缺少事实时用商品图像与留白完成对应区域。'];

@@ -1,6 +1,6 @@
 import { normalizeAvatarStatus } from '../avatar-status.js';
 import { generationSize, imageFailureMessage, classifyImageFailure } from './image-generation.js';
-import { DEFAULT_STYLE_ID, STYLE_PRESETS, getStylePreset, validateStyleLibrary, assertStyleForPurpose } from './style-presets.js';
+import { DEFAULT_STYLE_ID, STYLE_PRESETS, getStylePreset, validateStyleLibrary, assertStyleForPurpose, styleMatchesPurpose } from './style-presets.js';
 import { createVideoSettings, validateVideoSettings } from './commerce-video.js';
 import { createCampaignSettings, validateCampaignSettings, validateCampaignMetadata, recoverCampaignRun } from './campaign.js';
 import { validateCatalogProfile, catalogPrompt, assertCatalogModel } from './catalog-prompts.js';
@@ -485,7 +485,7 @@ function validatedRequest(value) {
   const campaign = value.campaign ? validateCampaignMetadata(value.campaign) : null;
   if (value.design !== undefined) {
     record(value.design, '图片用途与风格');
-    assertStyleForPurpose(value.design.presetId, value.design.purpose);
+    if (!styleMatchesPurpose(value.design.presetId, value.design.purpose)) throw new Error('图片风格与用途不匹配，请重新选择');
     if (value.design.layout !== undefined && (value.design.layout !== 'template' || value.design.purpose !== 'detail')) throw new Error('图片模板类型无效');
   }
   if (campaign && (value.n !== 1 || !QUALITIES.some(quality => value.size === generationSize(campaign.role === 'hero' ? '1:1' : '2:3', quality)))) throw new Error('套图原始请求数量或比例无效');

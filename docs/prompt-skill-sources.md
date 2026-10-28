@@ -68,3 +68,22 @@
 本次已完成上述方法的代码适配与隔离回归，尚未通过真实付费生成验证其对实际出图或出片质量的提升。模型能力、时长、规格和可用参数仍以本项目配置为准，不采用开源文档中未经验证的模型排名或参数表。适配不授予 Shell 或任意外部服务权限，继续遵守当前画风、素材归属和关键事实确认规则。
 
 另外核查了 [remotion-dev/skills](https://github.com/remotion-dev/skills)：主要面向用代码制作、渲染视频，更适合以后开发可控字幕、界面演示或模板视频时评估，当前提示词助手不优先接入。
+
+
+## 电商模板扩充与图片交接（2026-10-28）
+
+本次把 8 个主图、12 个单画布详情方向登记到 `app/resources/ecommerce_image_designs.json` 的 `commerce-v1` 包。由于用户选择自行生成参考图，新增方向全部保持 `enabled: false`，不展示、不接受新生成提交。图片经人工视觉复核及 `scripts/import_ecommerce_templates.py` 校验后按批启用，不以占位图片冒充成品。旧模板及历史成品继续保留。完整文件名、逐图提示词和交接步骤在 `docs/ecommerce-template-pack`。
+
+已下载并阅读以下 MIT 来源的相关创作方法，没有执行仓库脚本、导入示例图、安装上游 Codex Skill 或接入上游 API：
+
+| 来源 | 固定版本 | 采用范围 |
+| --- | --- | --- |
+| https://github.com/xianyu110/ecommerce-image-skills | `f4566fdc812584425728862ad8e08c90883d81ee` | 商品身份锁定、单个卖点的信息层级、合理场景、详情节奏；不采用多页生成和拼接流程 |
+| https://github.com/buluslan/gpt-image2-ecommerce | `73abd50bf2b689b5a453f28ddd7b0016415deec6` | hero、flat-lay、luxury-atmospherics、A+ 的构图方向；不采用示例功效、参数、成分、认证、模型推荐或平台尺寸声明 |
+| https://github.com/oldred-byte/ec-visual-skill | `fead6fa34679a920ed67c7119e2df526ed2d139c` | 商品/品牌优先配色、可见证据、避免重复构图、画面与卖点对应；不采用强制 5 主图 + 10 屏、推断缺失事实或禁止系统排字等全局流程 |
+
+三份上游 MIT 原始版权声明保存在 `app/resources/ecommerce_templates.LICENSE.txt`。仓库许可证不代表其示例照片、品牌和肖像已经授权，本次不复用这些图片。共享定义记录来源、固定提交、原路径和许可；现有 `builtin:product-image` 与 `builtin:product-detail-layout` 升为 `1.2`，扩充真实外观、配色、单个视觉重点及图像模块节奏规则，并记录 `source_adaptations`。规则仍经服务端白名单编译进实际提示词，私有 Skill 隔离、模型通道、素材权限和计费保持原样。新模板的 `generationRules` 只从服务端维护目录读取，客户端不能伪造启用或替换规则；局部编辑不重新套用模板构图。
+
+此次尚无用户交付的 20 张参考图，不声称已经完成扩充模板的实际付费出图质量验证。自动测试验证的是目录、启用门槛、请求、参考图顺序、导入格式和兼容性，不能替代视觉审核。
+
+2026-10-28 下午更新：用户已交付上述全部 20 张参考图，经过文件校验、总览及重点大图检查后导入并启用，现有 12 个主图和 20 个详情图选项。原图保持不变，源资源、本地构建与 HTTP 返回已核对一致。25 项前端领域测试、582 项后端隔离检查、3 项导入测试、桌面/手机图库专项测试及构建通过。仍未发起真实模型的付费效果测试，不把模板集成验证等同于实际生成质量承诺。详见 `docs/ecommerce-template-pack/验证记录.md`。

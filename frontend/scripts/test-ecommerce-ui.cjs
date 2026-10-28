@@ -9,6 +9,7 @@ const base = process.env.ECOMMERCE_UI_URL || 'http://127.0.0.1:5177'
 const output = path.join(os.tmpdir(), 'workflow-plus-ecommerce-check')
 fs.mkdirSync(output, { recursive: true })
 const clone = value => JSON.parse(JSON.stringify(value))
+const sceneIds = require('../../app/resources/ecommerce_scenes.json').map(scene => scene.id)
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64')
 const file = name => ({ name, mimeType: 'image/png', buffer: png })
 async function choose(page, root, label) {
@@ -25,6 +26,7 @@ async function waitUntil(predicate) {
 async function main() {
   const { createStorefrontProject, selectStorefrontGoal } = await import(pathToFileURL(path.resolve(__dirname, '../src/features/ecommerce/domain/storefront.js')))
   const { videoBriefSignature } = await import(pathToFileURL(path.resolve(__dirname, '../src/features/ecommerce/domain/video-brief.js')))
+  const { stylesForPurpose } = await import(pathToFileURL(path.resolve(__dirname, '../src/features/ecommerce/domain/style-presets.js')))
   // Native scrollbar space must be present to detect disclosure layout shifts.
   const browser = await chromium.launch({ channel: 'msedge', headless: true, ignoreDefaultArgs: ['--hide-scrollbars'] })
   try {
@@ -39,7 +41,7 @@ async function main() {
       selectStorefrontGoal(state, 'detail'); state.creative.copy.enabled = false
       const product = `${base}/admin/ecommerce-box/styles/technology.jpg`
       const alternate = `${base}/admin/ecommerce-box/styles/editorial.jpg`
-      let detail = { id: 1, name: state.name, revision: 1, state, runs: [], jobs: [] }
+      let detail = { id: 1, name: state.name, revision: 1, state, runs: [], jobs: [], available_scene_ids: [...sceneIds] }
       let uploads = 0; let failNextSubmit = false; const checked = []; const briefCalls = []; const copyCalls = []; const savedAssets = []
       let brief = { version: 0, phase: 'empty', materials: [], roles: {}, characters: [], questions: [], answers: {}, messages: [], proposal: '', story: null }
       const user = { id: 901, username: 'ecommerce-fixture', role: 'user', credit_balance: 5000 }
@@ -157,6 +159,8 @@ async function main() {
       async function screenshot(name) { await page.screenshot({ path: path.join(output, `${viewport.width}-${name}.png`), fullPage: true, animations: 'disabled' }) }
       try {
         await page.goto(`${base}/admin/ecommerce-box`)
+        await page.locator('.commerce-home, .storefront').first().waitFor({ timeout: 15000 })
+        if (await page.locator('.commerce-home').count()) await page.locator('.product-card').first().click()
         await page.getByRole('heading', { name: '电商宝盒', exact: true }).waitFor({ timeout: 15000 })
         await page.getByRole('button', { name: /添加商品图片/ }).waitFor()
         assert.equal(await page.locator('.generate-button').isDisabled(), true)
@@ -323,7 +327,7 @@ async function main() {
         assert.equal(await page.locator('.output-plan').count(), 0)
         assert.equal(await page.locator('.reference-settings').count(), 0, 'pure white main image has no person or scene controls')
         await page.locator('.selected-style').click()
-        assert.equal(await page.locator('.style-gallery button').count(), 4)
+        assert.equal(await page.locator('.style-gallery button').count(), stylesForPurpose('main').length)
         assert.equal(await page.locator('.style-gallery button').filter({ hasText: '商品详情' }).count(), 0)
         await screenshot('main-styles')
         await page.locator('.el-dialog:visible .el-dialog__headerbtn').click()
@@ -451,6 +455,14 @@ async function main() {
         await page.getByTestId('reference-upload').setInputFiles(file('model.png'))
         await waitUntil(() => uploads === 5)
         await page.locator('.el-switch').filter({ has: page.getByRole('switch', { name: '使用场景参考', exact: true }) }).click()
+        await page.waitForFunction(() => document.querySelectorAll('.scene-grid button').length === 10)
+        detail.available_scene_ids = sceneIds.filter(id => id !== 'office')
+        await refresh()
+        await page.waitForFunction(() => document.querySelectorAll('.scene-grid button').length === 9)
+        assert.equal(await page.locator('.scene-grid button').filter({ hasText: '现代办公室' }).count(), 0, 'unavailable server scenes are hidden')
+        await page.locator('.scene-grid img[alt="城市街景"]').dispatchEvent('error')
+        await page.waitForFunction(() => document.querySelectorAll('.scene-grid button').length === 8)
+        assert.equal(await page.locator('.scene-grid button').filter({ hasText: '城市街景' }).count(), 0, 'failed image loads are hidden')
         await page.getByRole('button', { name: '上传场景', exact: true }).click()
         await page.getByTestId('reference-upload').setInputFiles(file('scene.png'))
         await waitUntil(() => uploads === 6)
@@ -506,9 +518,8 @@ async function main() {
         await composer.getByTestId('video-proposal').waitFor()
         assert.equal(briefCalls.length, callsBeforeReload, 'reload reads the saved conversation without a paid request')
         assert.equal(await composer.locator(`[data-material="${motherId}"]`).getByRole('combobox', { name: /人物角色/ }).getAttribute('aria-label'), 'model.png人物角色')
-        await composer.locator('.brief-history > summary').click()
-        await composer.locator('.brief-history').getByText('希望这段视频是什么感觉？：自然生活感', { exact: true }).waitFor()
-        await composer.locator('.brief-history > summary').click()
+        assert.equal(await composer.locator('.brief-history').count(), 0, 'conversation history is not rendered')
+        assert.equal(brief.answers.tone.answer, '自然生活感', 'hidden conversation context remains available')
         await clickGenerate()
         await page.getByRole('heading', { name: '确认生成', exact: true }).waitFor()
         assert.equal(briefCalls.at(-1).action, 'confirm')
@@ -579,6 +590,9 @@ async function main() {
         await page.locator('.el-switch').filter({ has: page.getByRole('switch', { name: '加入宣传文案', exact: true }) }).click()
         const beforeCopyUploads = uploads
         await page.getByTestId('product-upload').setInputFiles(file('copy-product.png'))
+        await waitUntil(() => uploads === beforeCopyUploads + 1)
+        assert.equal(copyCalls.length, 0, 'uploading does not silently charge for AI copy; drafting is optional')
+        await page.getByRole('button', { name: 'AI 拟写', exact: true }).click()
         await waitUntil(() => copyCalls.length === 1 && uploads === beforeCopyUploads + 1)
         await page.getByRole('textbox', { name: '宣传标题', exact: true }).waitFor()
         await waitUntil(() => detail.state.creative.copy.headline === '日常好物 轻松相伴')

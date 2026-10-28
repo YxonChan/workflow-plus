@@ -20,7 +20,7 @@ const SYSTEMS = {
 
 export function campaignStyle(presetId, textMode, useScene = false, overlayText = false) {
   const preset = getStylePreset(presetId);
-  const system = SYSTEMS[presetId];
+  const system = preset?.palette && preset?.lighting ? [...preset.palette, preset.lighting] : SYSTEMS[presetId];
   if (!preset || !system) throw new Error('套图风格无效');
   const [background, secondary, text, accent, lighting] = system;
   return {

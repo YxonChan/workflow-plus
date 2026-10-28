@@ -4,6 +4,8 @@ export const IMAGE_PURPOSES = designs.purposes;
 
 // Keep persisted IDs so existing results and frozen edit snapshots remain readable.
 const STYLE_DIRECTIONS = {
+  'poster-hero': { name: '单品 Hero · 留白广告', category: '宣传海报', description: '单品主角 / 渐变背景 / 大面积留白', prompt: '采用高端 DTC 单品 Hero 广告：只突出目标商品一个主角，商品置于画面右侧或视觉重心，背景使用克制的品牌渐变或柔和色场，左侧保留完整且干净的文案留白。商业摄影光线、清晰接触阴影、商品占比醒目。不要拼版、不要多件商品、不要生成任何文字、数字、价格、折扣、认证、销量或假 Logo。' },
+  'poster-tech': { name: '科技新品 · 暗色轮廓光', category: '宣传海报', description: '暗色背景 / 轮廓光 / 科技新品', prompt: '采用科技新品发布广告：目标商品为唯一主体，暗色深炭背景，克制的蓝色或冷色轮廓光突出真实外形与材质，画面一侧保留整洁文案区域。高端商业产品摄影，强焦点但不夸张，不生成拆解图、参数、UI、文字、数字、价格、折扣、认证、销量或假 Logo。' },
   'clean-studio': { name: '银灰科技 · 模块详情', category: '数码家电', description: '银灰 / 大图与细节分区 / 信息层级', prompt: '银白与中性灰的科技产品详情设计，柔和金属光泽，主体大图与独立的细节小窗形成清晰模块，整套统一对齐和信息层级。只根据目标商品已有外观安排细节，不复制示例的拆解零件、数字、品牌或功能。' },
   editorial: { name: '叙事画报 · 场景详情', category: '通用详情', description: '场景拼版 / 画报分栏 / 视觉叙事', prompt: '采用叙事画报的连续摄影与分栏节奏，以目标商品的整体、可见细节、实际使用环境形成连续主题。中性底色、真实光影、清晰图文层级；不生成分镜脚本表格、无关人物、机位图或示例说明文字。' },
   natural: { name: '清新自然 · 商品详情', category: '美妆生活', description: '清透绿白 / 主视觉与细节 / 图文分区', prompt: '采用浅绿与白色的清透电商详情设计，自然日光，主视觉、真实细节、场景和商品信息分区形成连续套图。可使用柔和绿白色块和局部放大窗；植物只作布景，不暗示成分或功效。' },
@@ -24,15 +26,17 @@ Object.assign(STYLE_DIRECTIONS, {
   'tryon-living': { name: '日常生活 · 模特试穿', category: '人物展示', description: '室内窗光 / 生活穿搭 / 真实质感', cover: '/admin/ecommerce-box/scenes/living.jpg', prompt: '生成最终模特生活方式试穿照片，明亮室内、柔和窗光、自然日常姿态，真实服装褶皱和得体穿搭，目标服饰清楚可辨。不复制独立商品白底图的构图，不生成详情排版或套图缩略总览。' },
 });
 
-export const STYLE_PRESETS = Object.entries(STYLE_DIRECTIONS).map(([id, { goal, ...direction }]) => ({
-  id, ...direction, ...designs.styles[id], cover: direction.cover || '/admin/ecommerce-box/styles/' + id + '.jpg',
+export const STYLE_PRESETS = Object.entries(designs.styles).map(([id, definition]) => ({
+  id, ...STYLE_DIRECTIONS[id], ...definition, cover: STYLE_DIRECTIONS[id]?.cover || '/admin/ecommerce-box/styles/' + id + '.jpg',
 }));
 
-export const DEFAULT_STYLE_ID = 'clean-studio';
-export const STYLE_CATEGORIES = ['全部', '跨境电商', '通用详情', '美妆生活', '数码家电'];
+export const DEFAULT_STYLE_ID = defaultStyleForPurpose('detail');
+export const STYLE_CATEGORIES = ['全部', ...new Set(STYLE_PRESETS.filter(style => style.enabled !== false).map(style => style.category))];
 export function getStylePreset(id = DEFAULT_STYLE_ID) { return STYLE_PRESETS.find(style => style.id === id); }
-export function stylesForPurpose(purpose) { return STYLE_PRESETS.filter(style => style.purposes.includes(purpose)); }
-export function styleSupportsPurpose(presetId, purpose) { return getStylePreset(presetId)?.purposes.includes(purpose) ?? false; }
+export function stylesForPurpose(purpose) { return STYLE_PRESETS.filter(style => style.enabled !== false && style.purposes.includes(purpose)); }
+// Availability applies to new work, not to the frozen design of an existing result.
+export function styleMatchesPurpose(presetId, purpose) { return !!getStylePreset(presetId)?.purposes.includes(purpose); }
+export function styleSupportsPurpose(presetId, purpose) { return styleMatchesPurpose(presetId, purpose) && getStylePreset(presetId).enabled !== false; }
 export function defaultStyleForPurpose(purpose) { return IMAGE_PURPOSES.find(item => item.id === purpose)?.defaultStyleId; }
 export function assertStyleForPurpose(presetId, purpose) {
   if (!styleSupportsPurpose(presetId, purpose)) throw new Error('图片风格与用途不匹配，请重新选择');

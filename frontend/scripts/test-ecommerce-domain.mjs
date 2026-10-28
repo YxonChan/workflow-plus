@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { characterImageRequest, attachCharacterResult } from '../src/features/ecommerce/domain/story.js'
 import { test } from 'node:test'
+import { existsSync, readFileSync } from 'node:fs'
 import { createProject, validateProject, buildCreativeRequests, buildEditRequest, buildProductRequest } from '../src/features/ecommerce/domain/commerce.js'
 import { buildCampaignRun, campaignShotRequest } from '../src/features/ecommerce/domain/campaign.js'
 import { buildVideoRequest } from '../src/features/ecommerce/domain/commerce-video.js'
@@ -9,6 +10,7 @@ import { IMAGE_PURPOSES, STYLE_PRESETS, stylesForPurpose, styleSupportsPurpose }
 import { SCENE_PRESETS } from '../src/features/ecommerce/domain/scene-presets.js'
 import { createStorefrontProject, selectStorefrontGoal, selectStorefrontStyle, storefrontImageRequests, storefrontVideoRequest, imageReferenceInput } from '../src/features/ecommerce/domain/storefront.js'
 import { videoBriefSignature } from '../src/features/ecommerce/domain/video-brief.js'
+import { campaignStyle } from '../src/features/ecommerce/domain/campaign-style.js'
 
 test('approved video separates character photos from products and rejects stale input', () => {
   const project = createStorefrontProject(); selectStorefrontGoal(project, 'video')
@@ -43,6 +45,18 @@ function prepared() {
   return project
 }
 
+// Construct frozen fixtures as they were submitted before the old templates retired.
+function beforeRetirement(presetId, callback) {
+  const preset = STYLE_PRESETS.find(item => item.id === presetId)
+  assert.equal(preset.retired, true)
+  const enabled = preset.enabled
+  try { preset.enabled = true; return callback() } finally { preset.enabled = enabled }
+}
+function legacyCampaignRun(project) {
+  project.creative.presetId = 'natural'
+  return beforeRetirement('natural', () => buildCampaignRun(project))
+}
+
 test('project round trips with source constraints, mark coordinates and current storage URLs', () => {
   const project = prepared()
   project.product.config.marking = { mode: 'manual', imageId: 'upload', marks: [{ id: 'm', label: 1, x: .1, y: .2, width: .3, height: .4 }], annotatedSrc: '/storage/fixtures/marked.jpg' }
@@ -53,16 +67,16 @@ test('project round trips with source constraints, mark coordinates and current 
   project.product.config.marking.marks[0].x = .9
   assert.throws(() => validateProject(project), /超出/)
 })
-test('campaign creates 5+7/8/9 ordered pages and freezes refs and one style', () => {
+test('historical campaign creates 5+7/8/9 ordered pages and freezes refs and one style', () => {
   for (const count of [7, 8, 9]) {
     const project = prepared()
     project.creative.campaign.detailCount = count
     project.creative.campaign.useScene = true
-    const run = buildCampaignRun(project)
+    const run = legacyCampaignRun(project)
     assert.equal(run.shots.length, 5 + count)
     assert.deepEqual(run.referenceRoles, ['model', 'product', 'scene'])
     const originalPrompt = run.shots[0].prompt
-    project.creative.presetId = 'sport'; project.product.results[0].src = '/storage/fixtures/other.jpg'
+    project.creative.presetId = 'main-color-block'; project.product.results[0].src = '/storage/fixtures/other.jpg'
     assert.equal(run.shots[0].prompt, originalPrompt)
     assert.equal(run.references[1], '/storage/fixtures/coat.jpg')
     for (const shot of run.shots) {
@@ -79,14 +93,14 @@ test('selected campaign pages and supplied facts do not invent missing specifica
   project.creative.campaign.excludedIds = ['H2', 'D3']
   project.creative.campaign.textMode = 'facts'
   project.creative.campaign.facts.title = '纯棉外套'
-  const run = buildCampaignRun(project)
+  const run = legacyCampaignRun(project)
   assert(!run.shots.some(shot => ['H2', 'D3'].includes(shot.id)))
   assert.match(run.shots.find(shot => shot.id === 'D1').prompt, /纯棉外套/)
   assert.match(run.shots[0].prompt, /不添加额外文字/)
 })
 test('edit retains original page ratio, style and ordered references', () => {
   const project = prepared()
-  const run = buildCampaignRun(project)
+  const run = legacyCampaignRun(project)
   const request = campaignShotRequest(run, run.shots[0])
   const result = { id: 'hero', src: '/storage/fixtures/hero.jpg', name: '主图', width: 2048, height: 2048,
     createdAt: new Date().toISOString(), operation: 'generate', request }
@@ -119,9 +133,115 @@ test('video sends original model URL with explicit duration and ordered refs, wi
   assert.match(request.prompt, /12 秒/)
   assert.match(request.prompt, /@图片1/)
 })
-test('all product and try-on styles and 8 scenes point to module assets', () => {
-  assert.equal(STYLE_PRESETS.length, 15); assert.equal(SCENE_PRESETS.length, 8)
+test('all registered styles and 10 scenes point to module assets', () => {
+  assert.equal(STYLE_PRESETS.length, 37); assert.equal(SCENE_PRESETS.length, 10)
   assert([...STYLE_PRESETS, ...SCENE_PRESETS].every(preset => preset.cover.startsWith('/admin/ecommerce-box/')))
+  for (const preset of [...STYLE_PRESETS.filter(item => item.enabled !== false), ...SCENE_PRESETS]) {
+    assert(existsSync(new URL('../public' + preset.cover.slice('/admin'.length), import.meta.url)), preset.id + ' reference must exist')
+  }
+})
+
+test('delivered template pack is the only available main and detail catalog', () => {
+  const imported = STYLE_PRESETS.filter(style => style.templatePack === 'commerce-v1')
+  assert.equal(imported.length, 20)
+  assert(imported.every(style => style.enabled === true))
+  assert.equal(stylesForPurpose('main').length, 8)
+  assert.equal(stylesForPurpose('detail').length, 12)
+  assert([...stylesForPurpose('main'), ...stylesForPurpose('detail')].every(style => style.templatePack === 'commerce-v1'))
+  assert.equal(stylesForPurpose('poster').length, 2)
+  assert.equal(stylesForPurpose('tryon').length, 3)
+})
+
+test('retired templates migrate drafts but frozen historical results remain editable', () => {
+  const retired = STYLE_PRESETS.filter(style => style.retired)
+  assert.equal(retired.length, 12)
+  for (const preset of retired) {
+    const project = uploadOnly()
+    const purpose = preset.purposes.includes('main') ? 'main' : 'detail'
+    selectStorefrontGoal(project, purpose)
+    const request = beforeRetirement(preset.id, () => {
+      selectStorefrontStyle(project, preset.id)
+      return storefrontImageRequests(project)[0].request
+    })
+    project.creative.library = { favorites: [preset.id], recent: [preset.id] }
+    project.creative.results = [{ id: 'archived', name: '历史成品', src: '/storage/fixtures/archived.jpg', width: 2048, height: 2048,
+      operation: 'generate', createdAt: new Date().toISOString(), request }]
+    project.creative.activeResultId = 'archived'
+    assert.throws(() => storefrontImageRequests(project), /用途不匹配/)
+    assert.throws(() => selectStorefrontStyle(project, preset.id), /用途不匹配/)
+    const restored = validateProject(JSON.parse(JSON.stringify(project)))
+    restored.integration = { ...project.integration }
+    selectStorefrontGoal(restored, purpose)
+    assert.equal(restored.creative.presetId, purpose === 'main' ? 'main-color-block' : 'detail-brand-minimal')
+    assert.deepEqual(restored.creative.results[0].request, request, 'draft migration never rewrites a frozen compose request')
+    const edit = buildEditRequest('creative', restored.creative, restored.creative.results[0], '光线更柔和')
+    assert.deepEqual(edit.design, request.design)
+    assert.equal(edit.styleReference, preset.cover)
+    assert.equal(edit.size, request.size)
+    assert.deepEqual(edit.images, ['/storage/fixtures/archived.jpg', ...request.images])
+    assert.deepEqual(edit.productImages, request.productImages)
+    restored.creative.results.push({ ...restored.creative.results[0], id: 'archived-edit', operation: 'edit', request: edit })
+    assert.deepEqual(validateProject(restored).creative.results[1].request.design, request.design)
+    restored.creative.results[0].request.design.purpose = purpose === 'main' ? 'detail' : 'main'
+    assert.throws(() => validateProject(restored), /用途不匹配/, 'archival access cannot bypass purpose compatibility')
+  }
+})
+
+test('historical pure-white main excludes copy, model and scene without remaining selectable', () => {
+  const project = uploadOnly(); selectStorefrontGoal(project, 'main')
+  project.creative.useModel = true; project.creative.useScene = true
+  project.creative.campaign.textMode = 'facts'; project.creative.campaign.facts.title = '不能画上去'
+  const request = beforeRetirement('bold-color', () => {
+    selectStorefrontStyle(project, 'bold-color')
+    return storefrontImageRequests(project)[0].request
+  })
+  assert.equal(request.poster, undefined)
+  assert.deepEqual(request.campaign.referenceRoles, ['product'])
+  assert.match(request.prompt, /纯白底商品摄影/)
+  assert(!request.prompt.includes('不能画上去'))
+  assert(!stylesForPurpose('main').some(style => style.id === 'bold-color'))
+})
+
+test('template pack is ready for supplied images but unavailable templates cannot be generated', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../../docs/ecommerce-template-pack/manifest.json', import.meta.url), 'utf8'))
+  const project = uploadOnly()
+  assert.equal(manifest.filter(item => item.purpose === 'main').length, 8)
+  assert.equal(manifest.filter(item => item.purpose === 'detail').length, 12)
+  for (const spec of manifest) {
+    const preset = STYLE_PRESETS.find(item => item.id === spec.id)
+    assert(preset?.prompt && preset.generationRules.length && preset.palette.length === 4)
+    assert.equal(preset.cover.split('/').at(-1), spec.filename)
+    assert(readFileSync(new URL('../../docs/ecommerce-template-pack/' + spec.promptFile, import.meta.url), 'utf8').includes(spec.filename))
+    assert.equal(campaignStyle(preset.id, 'none').palette.length, 4, 'new main styles can render application copy without palette errors')
+    selectStorefrontGoal(project, spec.purpose)
+    // Exercise the enabled path in memory without activating templates or making paid requests.
+    const enabled = preset.enabled
+    try {
+      preset.enabled = false
+      assert(!stylesForPurpose(spec.purpose).includes(preset))
+      assert.throws(() => selectStorefrontStyle(project, preset.id), /用途不匹配/)
+      project.creative.presetId = preset.id
+      assert.throws(() => storefrontImageRequests(project), /用途不匹配/)
+      preset.enabled = true
+      selectStorefrontStyle(project, preset.id)
+      const request = storefrontImageRequests(project)[0].request
+      assert.equal(request.styleReference, preset.cover)
+      assert(request.prompt.includes(preset.prompt))
+      if (spec.purpose === 'detail') {
+        assert.equal(request.design.layout, 'template')
+        assert(request.prompt.includes(preset.detailLayout))
+      }
+      const result = { id: 'pack-result', name: preset.name, src: '/storage/fixtures/pack.jpg', width: 1024, height: 1536,
+        operation: 'generate', createdAt: new Date().toISOString(), request }
+      assert.deepEqual(buildEditRequest('creative', project.creative, result, '更明亮').design, request.design)
+    } finally { preset.enabled = enabled }
+  }
+})
+
+test('catalog names, categories and descriptions all have English mappings', () => {
+  const locale = readFileSync(new URL('../src/i18n/locales/ecommerceStyles.ts', import.meta.url), 'utf8').split('export const ecommerceStyleEn = ')[1]
+  const keys = new Set([...locale.matchAll(/^  (".*"): /gm)].map(match => JSON.parse(match[1])))
+  for (const preset of STYLE_PRESETS) for (const key of ['name', 'category', 'description']) assert(keys.has(preset[key]), preset.id + ': ' + key)
 })
 
 function uploadOnly() {
@@ -142,8 +262,31 @@ test('upload-only storefront makes one complete template detail without paid int
   assert.equal(imageReferenceInput(items[0].request).images.length, 3)
   assert.deepEqual(items[0].request.referenceRoles, ['product'])
   assert.equal(items[0].request.campaign, undefined)
-  assert.deepEqual(items[0].request.design, { purpose: 'detail', presetId: 'clean-studio', layout: 'template' })
+  assert.deepEqual(items[0].request.design, { purpose: 'detail', presetId: 'detail-brand-minimal', layout: 'template' })
   assert.equal(JSON.stringify(project), before, 'building a plan does not create synthetic saved results')
+})
+
+test('new storefront work prefers visible uploads to hidden legacy extraction selections', () => {
+  const project = uploadOnly()
+  const processed = { id: 'old-extraction', name: '商品提取', src: '/storage/fixtures/extracted.jpg', width: 2048, height: 1365,
+    createdAt: new Date().toISOString(), operation: 'generate', request: { ...buildProductRequest(project.product), n: 1 } }
+  project.product.results = [processed]; project.product.activeResultId = processed.id
+  project.integration.useProcessedProduct = true
+  const historical = JSON.stringify(processed)
+  for (const goal of ['main', 'detail', 'poster', 'tryon']) {
+    selectStorefrontGoal(project, goal)
+    const before = JSON.stringify(project)
+    const request = storefrontImageRequests(project)[0].request
+    assert(request.images.includes('/storage/fixtures/front.jpg'))
+    assert(!imageReferenceInput(request).images.includes(processed.src))
+    assert.equal(JSON.stringify(project), before, 'new generation leaves historical data intact')
+  }
+  selectStorefrontGoal(project, 'video')
+  assert(!storefrontVideoRequest(project).image_with_roles.some(ref => ref.url === processed.src))
+  assert.equal(JSON.stringify(project.product.results[0]), historical)
+  project.product.uploads = []; project.product.selectedUploadId = ''
+  selectStorefrontGoal(project, 'detail')
+  assert(storefrontImageRequests(project)[0].request.images.includes(processed.src), 'result-only legacy projects retain their only product reference')
 })
 
 test('marketing copy is frozen separately from the product photo and survives edits', () => {
@@ -183,6 +326,82 @@ test('old pack goals migrate to one detail image while retaining uploaded produc
   assert.match(storefrontImageRequests(project)[0].request.prompt, /500ml/)
 })
 
+test('confirmed product description becomes exact detail text without a generated headline', () => {
+  const project = uploadOnly()
+  const lines = ['材质：100% 纯棉', '规格：M / L / XL', '价格：¥129.90', '简介：轻松穿出日常风格']
+  project.product.config.notes = lines.join('\r\n')
+  project.creative.copy.sellingPoints = ['柔软亲肤']
+  // Old poster-only facts must not silently appear in a detail image.
+  project.creative.copy.facts.price = '¥999'
+  const restored = validateProject(JSON.parse(JSON.stringify(project)))
+  assert.equal(restored.product.config.notes, project.product.config.notes)
+  const request = storefrontImageRequests(restored)[0].request
+  for (const line of lines) {
+    assert(request.prompt.includes(JSON.stringify(line)), 'description lines are explicitly approved on-image text')
+    assert.equal(request.prompt.split(line).length - 1, 1, 'facts are not duplicated as additional background text')
+  }
+  assert.match(request.prompt, /柔软亲肤/)
+  assert.match(request.prompt, /材质、规格、价格、数字和单位必须保持原文/)
+  assert(!request.prompt.includes('不添加新的营销文字'), 'manual-only copy does not conflict with a no-text instruction')
+  assert(!request.prompt.includes('¥999'), 'hidden poster facts are not part of confirmed detail copy')
+  assert.equal(request.poster, undefined)
+  restored.creative.results.push({ id: 'manual-detail', name: '详情图', src: '/storage/fixtures/manual-detail.jpg',
+    width: 1365, height: 2048, createdAt: new Date().toISOString(), operation: 'generate', request })
+  const history = validateProject(JSON.parse(JSON.stringify(restored)))
+  history.product.config.notes = '价格：¥149'
+  const edit = buildEditRequest('creative', history.creative, history.creative.results[0], '背景更浅一些')
+  assert(history.creative.results[0].request.prompt.includes('¥129.90'), 'history retains the frozen confirmed description')
+  assert.match(edit.prompt, /当前页面主题、文案及视觉风格/)
+  assert(!edit.prompt.includes('¥149'))
+  history.creative.copy.enabled = false
+  const withoutText = storefrontImageRequests(history)[0].request
+  assert.match(withoutText.prompt, /商品简介仅作为商品参考，不排入图中文字/)
+  assert(!withoutText.prompt.includes('将以下已确认文案'))
+  assert.match(withoutText.prompt, /商品资料.*价格：¥149/)
+})
+
+test('description-only details and empty optional points survive persistence', () => {
+  const project = uploadOnly()
+  project.product.config.notes = '材质：陶瓷\n容量：300ml\n价格：¥59'
+  project.creative.copy.sellingPoints = ['', '']
+  const restored = validateProject(JSON.parse(JSON.stringify(project)))
+  assert.deepEqual(restored.creative.copy.sellingPoints, [])
+  for (const preset of stylesForPurpose('detail')) {
+    selectStorefrontStyle(restored, preset.id)
+    const request = storefrontImageRequests(restored)[0].request
+    assert(request.prompt.includes(JSON.stringify('价格：¥59')))
+    assert.match(request.prompt, /将以下已确认文案/)
+  }
+  selectStorefrontGoal(restored, 'main')
+  assert.equal(restored.product.config.notes, project.product.config.notes, 'changing image purpose retains manual facts')
+  const main = storefrontImageRequests(restored)[0].request
+  assert.match(main.prompt, /商品资料/)
+  assert(!main.prompt.includes('将以下已确认文案'), 'main images keep descriptions as background, not a dense detail body')
+})
+
+test('manual subtitle, selling points and poster prices do not require an AI headline', () => {
+  const project = uploadOnly()
+  for (const purpose of ['main', 'poster']) {
+    selectStorefrontGoal(project, purpose)
+    for (const field of ['subtitle', 'sellingPoints']) {
+      project.creative.copy.subtitle = field === 'subtitle' ? '每天的舒适选择' : ''
+      project.creative.copy.sellingPoints = field === 'sellingPoints' ? ['柔软亲肤'] : []
+      const request = storefrontImageRequests(project)[0].request
+      assert.equal(request.poster.headline, '')
+      assert.deepEqual(request.poster.sellingPoints, project.creative.copy.sellingPoints)
+      assert.equal(request.poster.subtitle, project.creative.copy.subtitle)
+      assert.match(request.prompt, /本次仅生成无营销文字的商品底图/)
+    }
+  }
+  project.creative.copy.subtitle = ''; project.creative.copy.sellingPoints = []
+  project.creative.copy.facts.price = '¥129.90'
+  assert.equal(storefrontImageRequests(project)[0].request.poster.facts.price, '¥129.90')
+  selectStorefrontGoal(project, 'main')
+  assert.equal(storefrontImageRequests(project)[0].request.poster, undefined, 'stale poster prices do not create a blank main-image overlay')
+  project.creative.copy.headline = '舒适之选'
+  assert.equal(storefrontImageRequests(project)[0].request.poster.facts.price, '', 'stale format cannot leak poster claims into a main image')
+})
+
 test('all detail templates produce one composition with exact copy, independent references and frozen edits', () => {
   const project = uploadOnly(); selectStorefrontGoal(project, 'poster')
   project.creative.campaign.excludedIds = ['H3']
@@ -194,7 +413,7 @@ test('all detail templates produce one composition with exact copy, independent 
   project.creative.campaign.detailCount = 9
   project.creative.campaign.excludedIds = ['D1', 'D2', 'D3']
   const templates = stylesForPurpose('detail')
-  assert.equal(templates.length, 8)
+  assert(templates.length >= 8)
   for (const preset of templates) {
     selectStorefrontStyle(project, preset.id)
     const items = storefrontImageRequests(project)
@@ -215,7 +434,7 @@ test('all detail templates produce one composition with exact copy, independent 
     assert.match(input.prompt, /把所有模块组合在这一张完整详情图中/)
     assert.match(input.prompt, /不复制其中商品、人物、品牌、文案、数字/)
   }
-  selectStorefrontStyle(project, 'beauty')
+  selectStorefrontStyle(project, 'detail-beauty-soft')
   const request = storefrontImageRequests(project)[0].request
   const result = { id: 'amazon', name: '卖点', src: '/storage/fixtures/amazon.jpg', width: 2048, height: 2048, operation: 'generate', createdAt: new Date().toISOString(), request }
   project.creative.results.push(result)
@@ -223,12 +442,12 @@ test('all detail templates produce one composition with exact copy, independent 
   const edit = buildEditRequest('creative', restored.creative, restored.creative.results[0], '光线柔和一些')
   assert.equal(edit.styleReference, request.styleReference)
   assert.equal(edit.poster, undefined)
-  assert.deepEqual(edit.design, { purpose: 'detail', presetId: 'beauty', layout: 'template' })
+  assert.deepEqual(edit.design, { purpose: 'detail', presetId: 'detail-beauty-soft', layout: 'template' })
   assert.deepEqual(imageReferenceInput(edit).images, [result.src, '/storage/fixtures/front.jpg', '/storage/fixtures/back.jpg', request.styleReference])
-  selectStorefrontStyle(project, 'dark-premium')
+  selectStorefrontStyle(project, 'detail-tech-dark')
   assert.equal(project.integration.goal, 'detail')
   assert.equal(storefrontImageRequests(project).length, 1)
-  assert.equal(request.design.presetId, 'beauty', 'submitted layout remains frozen when the next style changes')
+  assert.equal(request.design.presetId, 'detail-beauty-soft', 'submitted layout remains frozen when the next style changes')
   project.creative.copy.enabled = false
   assert.match(storefrontImageRequests(project)[0].request.prompt, /不添加新的营销文字/)
 })
@@ -260,22 +479,18 @@ test('purpose controls compatible templates without changing page exclusions or 
   assert.equal(storefrontImageRequests(project)[0].request.design.purpose, 'tryon')
 })
 
-test('single main image stays single and pure-white excludes copy, model and scene', () => {
+test('new main image stays single, square and preserves its design in edits', () => {
   const project = uploadOnly(); selectStorefrontGoal(project, 'main')
   project.creative.copy = { enabled: true, headline: '商品标题', subtitle: '', sellingPoints: [] }
-  project.creative.useModel = true; project.creative.useScene = true
-  project.creative.campaign.textMode = 'facts'; project.creative.campaign.facts.title = '不能画上去'
   const items = storefrontImageRequests(project)
   assert.deepEqual(items.map(item => item.pageKey), ['M1'])
   const request = items[0].request
-  assert.equal(request.poster, undefined)
+  assert.equal(request.poster.headline, '商品标题')
   assert.equal(request.size, '2048x2048')
   assert.deepEqual(request.campaign.referenceRoles, ['product'])
-  assert.match(request.prompt, /纯白底商品摄影/)
-  assert(!request.prompt.includes('不能画上去'))
-  assert.deepEqual(request.design, { purpose: 'main', presetId: 'bold-color' })
-  project.creative.useModel = false; project.creative.useScene = false
-  selectStorefrontStyle(project, 'sport')
+  assert.match(request.prompt, /一张独立商品主图/)
+  assert.deepEqual(request.design, { purpose: 'main', presetId: 'main-color-block' })
+  selectStorefrontStyle(project, 'main-tech-rim')
   const designed = storefrontImageRequests(project)[0].request
   assert.equal(designed.poster.headline, '商品标题')
   assert.equal(designed.campaign.shotId, 'M1')
@@ -284,11 +499,11 @@ test('single main image stays single and pure-white excludes copy, model and sce
   const restored = validateProject(JSON.parse(JSON.stringify(project)))
   selectStorefrontGoal(restored, 'tryon')
   const edit = buildEditRequest('creative', restored.creative, restored.creative.results[0], '减弱阴影')
-  assert.deepEqual(edit.design, { purpose: 'main', presetId: 'sport' }, 'editing retains the output purpose even after switching modes')
+  assert.deepEqual(edit.design, { purpose: 'main', presetId: 'main-tech-rim' }, 'editing retains the output purpose even after switching modes')
 })
 
 test('layout references obey the image limit and cannot become arbitrary imported URLs', () => {
-  const project = uploadOnly(); selectStorefrontStyle(project, 'monochrome')
+  const project = uploadOnly(); selectStorefrontStyle(project, 'detail-aplus-light')
   for (let i = 2; i < 12; i++) project.product.uploads.push({ id: `extra-${i}`, name: 'extra', src: `/storage/fixtures/${i}.jpg`, width: 1000, height: 1000 })
   const request = storefrontImageRequests(project)[0].request
   assert.throws(() => imageReferenceInput(request), /参考图片超过上限/)
@@ -326,7 +541,7 @@ test('supplemental product references survive reload and edits while the origina
   assert.equal(restored.product.selectedUploadId, 'front')
   const edit = buildEditRequest('creative', restored.creative, restored.creative.results[0], '背景更亮')
   assert.equal(edit.size, '2048x2048')
-  assert.deepEqual(imageReferenceInput(edit).images, ['/storage/fixtures/main.jpg','/storage/fixtures/front.jpg','/storage/fixtures/back.jpg', '/admin/ecommerce-box/styles/bold-color.jpg'])
+  assert.deepEqual(imageReferenceInput(edit).images, ['/storage/fixtures/main.jpg','/storage/fixtures/front.jpg','/storage/fixtures/back.jpg', '/admin/ecommerce-box/styles/main-color-block.jpg'])
   restored.creative.results[0].request.productImages = ['file:///etc/passwd']
   assert.throws(() => validateProject(restored), /图片地址无效/)
 })

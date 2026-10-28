@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { zipSync } from 'fflate'
 import { t } from '@/i18n'
@@ -8,6 +8,7 @@ import { resolveIcon } from '@/utils/iconRegistry'
 import { listAssets } from '@/api/asset'
 import type { Asset } from '@/types'
 import MediaStrip from '@/features/ecommerce/MediaStrip.vue'
+import GenerationHistory from '@/features/ecommerce/GenerationHistory.vue'
 import ReferenceJobs from '@/features/ecommerce/ReferenceJobs.vue'
 import ProductMarker from '@/features/ecommerce/ProductMarker.vue'
 import StoryComposer from '@/features/ecommerce/StoryComposer.vue'
@@ -18,14 +19,18 @@ import { ApiError } from '@/api/http'
 import { characterImageRequest } from '@/features/ecommerce/domain/story.js'
 import { ecommerce } from '@/features/ecommerce/api'
 import { useEcommerce, clone, errorText } from '@/features/ecommerce/useEcommerce'
-import { buildEditRequest, PRODUCT_OPTIONS, validateProject } from '@/features/ecommerce/domain/commerce.js'
+import { buildEditRequest, validateProject } from '@/features/ecommerce/domain/commerce.js'
 import { STOREFRONT_GOALS, storefrontGoal, selectStorefrontGoal, selectStorefrontStyle } from '@/features/ecommerce/domain/storefront.js'
 import { STYLE_PRESETS, stylesForPurpose } from '@/features/ecommerce/domain/style-presets.js'
 import { SCENE_PRESETS, selectedSceneReference } from '@/features/ecommerce/domain/scene-presets.js'
 import type { ImageRequest, Job, Marking, Media, PlanItem, Poster, Project, ProjectDetail, Quote, Result, SectionKind, StoryCharacter } from '@/features/ecommerce/types'
 
+const props = defineProps<{ productId?: string }>()
+const router = useRouter()
 const work = useEcommerce()
 const { projects, project, id, jobs, runs, loading, dirty, saving, saveError, imageModels, videoModels, imageModel, isOfficial } = work
+const unavailableSceneIds = ref<string[]>([])
+const availableScenes = computed(() => SCENE_PRESETS.filter(preset => work.availableSceneIds.value.includes(preset.id) && !unavailableSceneIds.value.includes(preset.id)))
 const goal = computed({ get: () => storefrontGoal(project.value), set: value => selectStorefrontGoal(project.value, value) })
 const lastImageGoal = ref('detail')
 watch(goal, value => { if (value !== 'video') lastImageGoal.value = value }, { immediate: true })
@@ -33,7 +38,6 @@ const contentMode = computed({ get: () => goal.value === 'video' ? 'video' : 'im
 const imageGoals = STOREFRONT_GOALS.filter(item => item.id !== 'video')
 const copyApplicable = computed(() => !['video', 'tryon'].includes(goal.value) && !(goal.value === 'main' && style.value.whiteBackground))
 const copyOverlayApplicable = computed(() => copyApplicable.value && goal.value !== 'detail')
-const copyNeeded = computed(() => copyApplicable.value && project.value.creative.copy.enabled && !project.value.creative.copy.headline.trim())
 const copyBusy = ref(false), copyError = ref('')
 let pendingCopy: { signature: string; key: string } | null = null
 const copyEditorJob = ref<Job | null>(null), editedPoster = ref<Poster | null>(null)
@@ -57,7 +61,7 @@ const compatibleStyles = computed(() => stylesForPurpose(goal.value))
 const styleCategories = computed(() => ['全部', ...new Set(compatibleStyles.value.map(item => item.category))])
 const visibleStyles = computed(() => compatibleStyles.value.filter(item => styleCategory.value === '全部' || item.category === styleCategory.value))
 watch(goal, () => { styleCategory.value = '全部'; styleOpen.value = false })
-const advancedOpen = ref(false)
+const advancedOpen = ref(true)
 const modelSetup = ref(false)
 const modelChoice = computed({
   get: () => !project.value.creative.useModel ? 'auto' : modelImage.value ? `${project.value.model.source === 'upload' ? 'upload' : 'result'}:${modelImage.value.id}` : 'auto',
@@ -146,7 +150,6 @@ const detailCampaigns = computed(() => {
   return [...groups.values()].reverse().map(group => ({ ...group, pages: group.pages.filter(job => job.status === 'success' && !hiddenJobs.value.includes(job.id)).sort((a, b) => Number(a.page_key.slice(1)) - Number(b.page_key.slice(1))) })).filter(group => group.pages.length)
 })
 const exportPages = computed(() => detailCampaigns.value.find(group => group.id === exportCampaignId.value)?.pages || [])
-const labels: Record<string, string> = { ethnicity: t('外观族裔'), gender: t('性别'), age: t('年龄段'), build: t('体型'), hair: t('发型'), category: t('商品类别'), presentation: t('陈列方式') }
 const isGenerating = (job: Job) => job.status === 'running' || (job.status === 'queued' && job.provider_submitted === true)
 const statusText = (job: Job) => isGenerating(job) ? t('生成中') : ({ queued: t('等待生成'), running: t('生成中'), success: t('已完成'), failed: t('生成失败'), unknown: t('待核对'), cancelled: t('已取消') })[job.status]
 const generationSignature = computed(() => JSON.stringify({ projectId: id.value, product: project.value.product, model: project.value.model, scene: project.value.scene,
@@ -176,7 +179,7 @@ function queueEstimate() {
 watch([generationSignature, loading, imageModel], queueEstimate)
 watch(id, () => { selectedRunId.value = 0; pendingSubmit = null; removed.value = null; pageError.value = ''; storyWorking.value = false; pendingCopy = null; copyError.value = ''; copyEditorJob.value = null; lastImageGoal.value = goal.value === 'video' ? 'poster' : goal.value })
 watch(outputRuns, value => { if (selectedRunId.value === 0 && value.length) selectedRunId.value = value[0]!.id })
-onMounted(() => { void attempt(work.init) })
+onMounted(() => { void attempt(() => work.init(Number(props.productId))) })
 onBeforeUnmount(() => { disposed = true; clearTimeout(estimateTimer) })
 onBeforeRouteLeave(async () => { try { await work.save(); return !saveError.value } catch { return false } })
 
@@ -200,7 +203,6 @@ async function upload(kind: SectionKind, files: File[]) {
     }
     await work.save()
   } finally { uploadsBusy.value = false }
-  if (kind === 'product' && copyNeeded.value && hasTextModel.value) void draftCopy()
   if (goal.value === 'video') void storyComposer.value?.analyze()
 }
 function chooseReference(kind: SectionKind) { referenceKind.value = kind; referenceInput.value?.click() }
@@ -239,18 +241,19 @@ async function selectAsset(asset: Asset, imageId: number) {
   if (id.value !== projectId) return
   media.id = crypto.randomUUID(); project.value[kind].uploads.push(media); selectUpload(kind, media)
   assetsOpen.value = false
-  if (kind === 'product' && copyNeeded.value && hasTextModel.value) void draftCopy()
   if (goal.value === 'video') void storyComposer.value?.analyze()
 }
 function openMarker() { markerImage.value = productImage.value || null; markerOpen.value = !!markerImage.value }
 async function saveMarking(marking: Marking) {
   const blob = await (await fetch(marking.annotatedSrc!)).blob()
   const media = await ecommerce.upload(id.value, new File([blob], 'product-marking.jpg', { type: 'image/jpeg' }))
-  project.value.product.config.marking = { ...marking, annotatedSrc: media.src }; markerOpen.value = false
+  project.value.product.config.marking = { ...marking, annotatedSrc: media.src }
+  // New marks target the original upload, not an older extracted product.
+  project.value.integration!.useProcessedProduct = false
+  markerOpen.value = false
 }
 function selectReferenceResult(kind: SectionKind, item: Media) {
   project.value[kind].activeResultId = item.id
-  if (kind === 'product') project.value.integration!.useProcessedProduct = true
   if (kind === 'model') { project.value.model.source = 'ai'; project.value.creative.useModel = true }
   if (kind === 'scene') { project.value.scene.source = 'custom'; project.value.creative.useScene = true }
 }
@@ -261,9 +264,8 @@ function selectScene(presetId: string) {
 function renameProduct() { if (project.value.product.config.name.trim()) project.value.name = project.value.product.config.name.trim().slice(0, 160) }
 async function saveStory() { await work.save(); if (saveError.value) throw new Error(saveError.value) }
 function generateCharacter(character: StoryCharacter) { return prepare(work.imageItems('model', characterImageRequest(character, project.value.model.quality), character.name)) }
-async function draftCopy(force = false) {
+async function draftCopy() {
   if (copyBusy.value) return false
-  if (!force && !copyNeeded.value) return true
   const projectId = id.value, target = project.value.creative.copy
   const signature = () => JSON.stringify({ projectId: id.value, uploads: project.value.product.uploads, primary: project.value.product.selectedUploadId, product: project.value.product.config, requirements: project.value.creative.notes })
   const before = signature(), previous = JSON.stringify(target)
@@ -293,7 +295,8 @@ function jobPoster(job: Job): Poster | null {
 function templateJob(job: Job) { return (job.request.original as ImageRequest).design?.layout === 'template' }
 function openCopyEditor(job: Job) {
   copyEditorJob.value = job
-  editedPoster.value = clone(jobPoster(job) || { headline: project.value.creative.copy.headline, subtitle: project.value.creative.copy.subtitle, sellingPoints: project.value.creative.copy.sellingPoints, presetId: project.value.creative.presetId })
+  const current = jobPoster(job) || { headline: project.value.creative.copy.headline, subtitle: project.value.creative.copy.subtitle, sellingPoints: project.value.creative.copy.sellingPoints, facts: project.value.creative.copy.facts, presetId: project.value.creative.presetId }
+  editedPoster.value = clone({ ...current, facts: current.facts || { price: '', originalPrice: '', discount: '', certification: '', sales: '', cta: '' } })
 }
 async function savePosterCopy(remove = false) {
   if (!copyEditorJob.value || !editedPoster.value) return
@@ -301,16 +304,12 @@ async function savePosterCopy(remove = false) {
   overrides[String(copyEditorJob.value.id)] = remove ? null : validatePoster(editedPoster.value)
   await saveStory(); copyEditorJob.value = null
 }
-async function jobFile(job: Job) { const poster = jobPoster(job); return job.mode === 'image' && poster?.headline.trim() ? posterBlob(job.result_url, poster) : fetchFile(job.result_url) }
+async function jobFile(job: Job) { const poster = jobPoster(job); const hasPosterText = !!poster && (poster.headline.trim() || poster.subtitle.trim() || poster.sellingPoints.length || Object.values(poster.facts || {}).some(value => value.trim())); return job.mode === 'image' && hasPosterText ? posterBlob(job.result_url, poster) : fetchFile(job.result_url) }
 function showResults() { resultsPane.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 async function generateMain() {
   if (busy.value || storyWorking.value || copyBusy.value) return
   if (goal.value === 'video') {
     if (await storyComposer.value?.continueFlow()) await prepare(work.build('creative'))
-    return
-  }
-  if (copyNeeded.value) {
-    if (await draftCopy()) await prepare(work.build('creative'))
     return
   }
   if (busy.value || estimating.value || !estimate.value) return
@@ -357,6 +356,25 @@ async function submitQuote() {
   } finally { busy.value = false }
 }
 function jobResult(job: Job) { return project.value[job.kind].results.find(item => item.id === `job-${job.id}`) }
+function historyEdit(job: Job) { const result = jobResult(job); if (result) startEdit(job.kind, result) }
+async function historyReuse(job: Job) {
+  const snapshot = job.request.original.ui_snapshot as { creative?: Project['creative']; model?: Project['model']; scene?: Project['scene']; product?: Project['product']; productConfig?: Project['product']['config']; integration?: Project['integration'] } | undefined
+  if (!snapshot?.creative) return
+  const current = clone(project.value)
+  current.creative = { ...clone(snapshot.creative), results: current.creative.results, activeResultId: current.creative.activeResultId }
+  if (snapshot.model) current.model = { ...clone(snapshot.model), results: [...current.model.results, ...snapshot.model.results.filter(item => !current.model.results.some(existing => existing.id === item.id))] }
+  if (snapshot.scene) current.scene = { ...clone(snapshot.scene), results: [...current.scene.results, ...snapshot.scene.results.filter(item => !current.scene.results.some(existing => existing.id === item.id))] }
+  if (snapshot.productConfig) current.product.config = clone(snapshot.productConfig)
+  if (snapshot.product) current.product = { ...clone(snapshot.product), results: current.product.results, activeResultId: current.product.activeResultId }
+  current.integration = { ...current.integration, ...snapshot.integration, videoBrief: undefined }
+  const validated = validateProject(current)
+  validated.integration = current.integration
+  selectStorefrontGoal(validated, storefrontGoal(validated))
+  project.value = validated
+  advancedOpen.value = true
+  await work.save()
+  ElMessage.success(t('已复用配置，请确认后生成'))
+}
 function startEdit(kind: SectionKind, result: Result) { editKind.value = kind; editResult.value = result; editInstruction.value = '' }
 async function edit() {
   if (!editResult.value) return
@@ -422,7 +440,7 @@ async function downloadAll() {
   downloadBusy.value = true
   try {
     const files: Record<string, Uint8Array> = {}; let total = 0
-    for (const [index, job] of successfulJobs.value.entries()) {
+    for (const [index, job] of outputJobs.value.filter(job => job.status === 'success').entries()) {
       const blob = await jobFile(job); total += blob.size
       if (total > 200 * 1024 * 1024) throw new Error(t('文件较大，请逐项下载'))
       const extension = job.mode === 'video' ? 'mp4' : blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png'
@@ -483,97 +501,85 @@ async function importProject(event: Event) {
   const data = JSON.parse(await file.text()) as Project
   const candidate = data.schema === 1 ? data : (data as unknown as { project: Project }).project
   const state = validateProject(candidate); state.integration = candidate.integration || {}
+  selectStorefrontGoal(state, storefrontGoal(state))
   state.creative.video.tasks = []; state.creative.video.activeTaskId = ''; state.creative.campaign.activeRun = null
-  await work.create(state, true); ElMessage.success(t('项目已导入'))
+  await work.create(state, true); await router.replace({ name: 'ecommerceProduct', params: { id: id.value } }); ElMessage.success(t('项目已导入'))
 }
 async function deleteProject() {
   try { await ElMessageBox.confirm(t('删除当前商品及其生成记录？'), t('删除商品'), { type: 'warning' }) } catch { return }
   await ecommerce.delete(id.value)
-  projects.value = await ecommerce.list()
-  if (projects.value[0]) await work.open(Number(projects.value[0].id)); else await work.create()
+  dirty.value = false
+  await router.push({ name: 'ecommerceBox' })
 }
 </script>
 
 <template>
-  <div v-loading="loading" class="ecommerce-box storefront">
+  <div v-loading="loading && !id" class="ecommerce-box storefront">
     <header class="storefront-header">
-      <div class="page-title"><el-icon :size="24"><component :is="resolveIcon('Box')" /></el-icon><h1>{{ t('电商宝盒') }}</h1><span class="save-state" :class="{ error: saveError }">{{ saveError ? t('保存失败') : saving ? t('保存中') : dirty ? t('待保存') : t('已保存') }}</span></div>
-      <div class="project-controls"><el-select :model-value="id || undefined" :disabled="busy || uploadsBusy" :aria-label="t('切换商品')" @change="value => attempt(() => work.open(Number(value)))"><el-option v-for="item in projects" :key="item.id" :value="Number(item.id)" :label="item.name" /></el-select><el-button :icon="resolveIcon('Plus')" :disabled="busy || uploadsBusy" @click="attempt(() => work.create())">{{ t('新商品') }}</el-button><el-dropdown trigger="click" :disabled="busy"><el-button :icon="resolveIcon('MoreFilled')" :aria-label="t('商品操作')" /><template #dropdown><el-dropdown-menu><el-dropdown-item :icon="resolveIcon('Download')" @click="attempt(exportProject)">{{ t('导出项目') }}</el-dropdown-item><el-dropdown-item :icon="resolveIcon('Upload')" @click="importInput?.click()">{{ t('导入项目') }}</el-dropdown-item><el-dropdown-item divided :icon="resolveIcon('Delete')" @click="attempt(deleteProject)">{{ t('删除商品') }}</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
+      <div class="page-title"><el-button text :icon="resolveIcon('ArrowLeft')" @click="router.push({ name: 'ecommerceBox' })">{{ t('我的商品') }}</el-button><span class="breadcrumb-slash">/</span><h1>{{ project.product.config.name || project.name }}</h1><span class="save-state" :class="{ error: saveError }">{{ saveError ? t('保存失败') : saving ? t('保存中') : dirty ? t('待保存') : t('已保存') }}</span></div>
+      <div class="project-controls"><el-dropdown trigger="click" :disabled="busy"><el-button text :icon="resolveIcon('MoreFilled')" :aria-label="t('商品操作')" /><template #dropdown><el-dropdown-menu><el-dropdown-item :icon="resolveIcon('Download')" @click="attempt(exportProject)">{{ t('导出项目') }}</el-dropdown-item><el-dropdown-item :icon="resolveIcon('Upload')" @click="importInput?.click()">{{ t('导入项目') }}</el-dropdown-item><el-dropdown-item divided :icon="resolveIcon('Delete')" @click="attempt(deleteProject)">{{ t('删除商品') }}</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
     </header>
     <el-alert v-if="pageError || saveError" :title="saveError || pageError" type="error" show-icon :closable="!saveError" @close="pageError = ''"><template v-if="saveError" #default><el-button link @click="saveError = ''; attempt(work.save)">{{ t('重试保存') }}</el-button></template></el-alert>
     <div class="storefront-workspace">
       <aside class="creation-pane">
         <div class="creation-fields">
+          <div class="creation-panel-heading"><h2>{{ t('创作配置') }}</h2><el-icon><component :is="resolveIcon('Setting')" /></el-icon></div>
           <section class="product-section">
-            <div class="section-heading"><h2>{{ goal === 'video' ? t('创作素材') : t('商品图片') }}</h2><el-button link :icon="resolveIcon('FolderOpened')" @click="attempt(() => openAssets('product'))">{{ t('我的资产') }}</el-button></div>
+            <div class="section-heading"><h2>{{ t('素材来源') }}</h2><el-button link :icon="resolveIcon('FolderOpened')" @click="attempt(() => openAssets('product'))">{{ t('我的资产') }}</el-button></div>
             <div class="product-dropzone" :class="{ dragging, empty: !project.product.uploads.length }" @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="event => attempt(() => upload('product', Array.from(event.dataTransfer?.files || [])))">
               <button v-if="!project.product.uploads.length" type="button" class="empty-upload" :disabled="uploadsBusy || loading" @click="productInput?.click()"><span class="upload-symbol"><el-icon :size="28" :class="{ 'is-loading': uploadsBusy }"><component :is="resolveIcon(uploadsBusy ? 'Loading' : 'Plus')" /></el-icon></span><strong>{{ uploadsBusy ? t('上传中') : goal === 'video' ? t('添加商品或人物图片') : t('添加商品图片') }}</strong><span>JPG / PNG / WebP</span></button>
               <MediaStrip v-else :items="project.product.uploads" :selected-id="project.product.selectedUploadId" :busy="uploadsBusy" upload @files="files => attempt(() => upload('product', files))" @select="item => selectUpload('product', item)" @remove="mediaId => removeUpload('product', mediaId)" @preview="item => fullPreview = item" />
             </div>
-            <div v-if="project.product.uploads.length" class="product-tools"><span>{{ goal === 'video' ? t('{count} 张素材', { count: project.product.uploads.length }) : t('{count} 张商品参考', { count: project.product.uploads.length }) }}</span></div>
+            <div v-if="project.product.uploads.length" class="product-tools"><span>{{ goal === 'video' ? t('{count} 张素材', { count: project.product.uploads.length }) : t('{count} 张商品参考', { count: project.product.uploads.length }) }}</span><el-button link :icon="resolveIcon('Aim')" :disabled="!productImage || busy || uploadsBusy || loading" @click="openMarker">{{ t('标记商品') }}</el-button></div>
           </section>
+          <el-input class="product-name-input" v-model="project.product.config.name" :aria-label="t('商品名称')" :placeholder="t('输入商品名称')" maxlength="100" @change="renameProduct" />
           <section class="goal-section">
             <el-radio-group v-model="contentMode" class="content-mode" :disabled="busy || storyWorking || copyBusy" :aria-label="t('制作类型')"><el-radio-button value="image"><el-icon><component :is="resolveIcon('Picture')" /></el-icon>{{ t('商品图片') }}</el-radio-button><el-radio-button value="video"><el-icon><component :is="resolveIcon('VideoCamera')" /></el-icon>{{ t('商品视频') }}</el-radio-button></el-radio-group>
+            <el-form v-if="goal !== 'video'" class="primary-purpose" label-position="top"><el-form-item :label="t('图片用途')"><el-select v-model="goal" :aria-label="t('图片用途')"><el-option v-for="option in imageGoals" :key="option.id" :value="option.id" :label="t(option.label)" /></el-select></el-form-item></el-form>
             <div v-if="goal === 'video'" class="video-quick-options">
               <div class="duration-options"><span>{{ t('视频时长') }}</span><el-radio-group v-model="project.creative.video.duration" :disabled="busy || storyWorking" :aria-label="t('视频时长')" size="small"><el-radio-button v-for="duration in [5,10,15]" :key="duration" :value="duration">{{ t('{count} 秒', { count: duration }) }}</el-radio-button></el-radio-group></div>
               <StoryComposer ref="storyComposer" :key="id" :project="project" :project-id="id" :jobs="jobs" :busy="busy" :has-text-model="hasTextModel" :save="saveStory" @working="value => storyWorking = value" @stage="value => videoStage = value" @generate="character => attempt(() => generateCharacter(character))" @check="job => attempt(() => checkOriginal(job))" />
             </div>
           </section>
-          <section v-if="goal === 'detail'" class="style-section detail-template"><div class="section-heading"><h2>{{ t('详情模板') }}</h2></div><button type="button" class="selected-style" @click="styleOpen = true"><img :src="style.cover" :alt="style.name" /><span><strong>{{ style.name }}</strong><small>{{ style.description }}</small></span><el-icon><component :is="resolveIcon('ArrowRight')" /></el-icon></button></section>
+          <section v-if="goal !== 'video'" class="product-intro-section">
+            <div class="section-heading"><h2>{{ t('商品简介') }}</h2><span>{{ t('选填') }}</span></div>
+            <el-input v-model="project.product.config.notes" type="textarea" :rows="5" maxlength="4000" :aria-label="t('商品简介')" :placeholder="t('填写已确认的商品信息，例如：\n材质：100% 纯棉\n规格：M / L / XL\n价格：¥129\n简介：你自己确定的文案')" />
+            <p class="product-intro-help">{{ goal === 'detail' ? t('开启宣传文案后，简介按原文排入详情图；材质、规格、价格不自动补写。') : goal === 'tryon' ? t('简介仅作为商品参考，不添加图中文字。') : t('简介作为制作依据；要显示在图上的短文案，请填写下方宣传文案。') }}</p>
+          </section>
+          <section v-if="goal === 'detail'" class="style-section detail-template"><div class="section-heading"><h2>{{ t('详情模板') }}</h2></div><button type="button" class="selected-style" @click="styleOpen = true"><img :src="style.cover" :alt="t(style.name)" /><span><strong>{{ t(style.name) }}</strong><small>{{ t(style.description || '') }}</small></span><el-icon><component :is="resolveIcon('ArrowRight')" /></el-icon></button></section>
           <section v-if="copyApplicable" class="copy-section">
             <div class="section-heading"><h2>{{ t('宣传文案') }}</h2><el-switch v-model="project.creative.copy.enabled" :disabled="copyBusy" :aria-label="t('加入宣传文案')" size="small" /></div>
             <template v-if="project.creative.copy.enabled">
               <el-input v-model="project.creative.copy.headline" maxlength="20" :disabled="copyBusy" :aria-label="t('宣传标题')" :placeholder="t('宣传标题')" />
               <el-input v-model="project.creative.copy.subtitle" maxlength="40" :disabled="copyBusy" :aria-label="t('宣传副标题')" :placeholder="t('补充一句（选填）')" />
-              <div v-if="project.creative.copy.sellingPoints.length" class="copy-points"><el-input v-for="(_, index) in project.creative.copy.sellingPoints" :key="index" v-model="project.creative.copy.sellingPoints[index]" maxlength="16" :disabled="copyBusy" :aria-label="t('卖点 {count}', { count: index + 1 })" /></div>
-              <div class="copy-action"><span>{{ t('文案按文本用量计费') }}</span><el-button link :icon="resolveIcon('MagicStick')" :loading="copyBusy" :disabled="busy || uploadsBusy || !hasTextModel || !project.product.uploads.length" @click="draftCopy(true)">{{ project.creative.copy.headline ? t('重新拟写') : t('AI 拟写') }}</el-button></div>
+              <div class="copy-points">
+                <div v-for="(_, index) in project.creative.copy.sellingPoints" :key="index" class="copy-point"><el-input v-model="project.creative.copy.sellingPoints[index]" maxlength="16" :disabled="copyBusy" :aria-label="t('卖点 {count}', { count: index + 1 })" :placeholder="t('卖点 {count}', { count: index + 1 })" /><el-button text :icon="resolveIcon('Delete')" :disabled="copyBusy" :aria-label="t('删除卖点 {count}', { count: index + 1 })" @click="project.creative.copy.sellingPoints.splice(index, 1)" /></div>
+                <el-button v-if="project.creative.copy.sellingPoints.length < 3" link :icon="resolveIcon('Plus')" :disabled="copyBusy" @click="project.creative.copy.sellingPoints.push('')">{{ t('添加卖点') }}</el-button>
+              </div>
+              <div v-if="goal === 'poster'" class="copy-facts">
+                <div class="copy-facts-heading">{{ t('商品信息（选填）') }}<small>{{ t('只展示你确认过的真实信息') }}</small></div>
+                <div class="copy-facts-grid">
+                  <el-input v-model="project.creative.copy.facts!.price" maxlength="20" :disabled="copyBusy" :placeholder="t('到手价，如 ¥129')" />
+                  <el-input v-model="project.creative.copy.facts!.originalPrice" maxlength="20" :disabled="copyBusy" :placeholder="t('原价（选填）')" />
+                  <el-input v-model="project.creative.copy.facts!.discount" maxlength="16" :disabled="copyBusy" :placeholder="t('折扣，如限时 8 折')" />
+                  <el-input v-model="project.creative.copy.facts!.certification" maxlength="24" :disabled="copyBusy" :placeholder="t('认证，如正品保障')" />
+                  <el-input v-model="project.creative.copy.facts!.sales" maxlength="24" :disabled="copyBusy" :placeholder="t('销量，如已售 1.2 万')" />
+                  <el-input v-model="project.creative.copy.facts!.cta" maxlength="16" :disabled="copyBusy" :placeholder="t('行动按钮，如立即购买')" />
+                </div>
+              </div>
+              <p class="manual-copy-help">{{ t('可直接填写自己的文案，无需 AI 拟写。') }}</p>
+              <div class="copy-action"><span>{{ t('AI 拟写按文本用量计费') }}</span><el-button class="copy-draft-button" :icon="resolveIcon('MagicStick')" :loading="copyBusy" :disabled="busy || uploadsBusy || !hasTextModel || !project.product.uploads.length" @click="draftCopy()">{{ project.creative.copy.headline ? t('重新拟写') : t('AI 拟写') }}</el-button></div>
               <p v-if="copyError" role="alert" class="copy-error">{{ copyError }}</p>
             </template>
           </section>
-          <section v-if="goal !== 'video'" class="requirements-section"><div class="section-heading"><h2>{{ t('有什么要求？') }}</h2></div><el-input v-model="project.creative.notes" type="textarea" :rows="4" maxlength="4000" :aria-label="t('制作要求')" :placeholder="goal === 'tryon' ? t('例如：年轻女模特，日常通勤穿搭，突出衣服版型（选填）') : t('例如：清爽干净的背景，突出纯棉材质，保留商品原色（选填）')" /></section>
+          <section v-if="goal !== 'video'" class="requirements-section"><div class="section-heading"><h2>{{ t('提示词') }}</h2></div><el-input v-model="project.creative.notes" type="textarea" :rows="4" maxlength="4000" :aria-label="t('制作要求')" :placeholder="goal === 'tryon' ? t('例如：年轻女模特，日常通勤穿搭，突出衣服版型（选填）') : t('例如：清爽干净的背景，突出纯棉材质，保留商品原色（选填）')" /></section>
           <section v-if="goal === 'tryon'" class="model-choice"><div class="section-heading"><h2>{{ t('模特') }}</h2></div><el-select v-model="modelChoice" :aria-label="t('模特')" :disabled="busy"><el-option value="auto" :label="t('自动搭配')" /><el-option v-for="item in project.model.uploads" :key="item.id" :value="`upload:${item.id}`" :label="item.name" /><el-option v-for="item in project.model.results" :key="item.id" :value="`result:${item.id}`" :label="item.name" /><el-option value="upload" :label="t('上传模特')" /><el-option value="asset" :label="t('从我的资产选择')" /><el-option value="generate" :label="t('生成虚拟模特')" /></el-select><div v-if="modelSetup" class="model-setup"><el-input v-model="project.model.config.notes" type="textarea" :rows="2" :aria-label="t('模特要求')" :placeholder="t('例如：年轻女模特，自然短发，日常穿搭')" /><el-button :loading="busy" :icon="resolveIcon('MagicStick')" @click="attempt(() => prepare(work.build('model')))">{{ t('生成模特参考') }}</el-button></div></section>
           <button type="button" class="advanced-trigger" :disabled="busy || storyWorking" :aria-expanded="advancedOpen" @click="advancedOpen = !advancedOpen"><el-icon><component :is="resolveIcon('Setting')" /></el-icon><span>{{ t('更多配置') }}</span><el-icon><component :is="resolveIcon(advancedOpen ? 'ArrowUp' : 'ArrowDown')" /></el-icon></button>
-          <div id="ecommerce-inline-settings" />
-        </div>
-        <footer class="creation-footer">
-          <div class="creation-summary"><span>{{ goal === 'video' ? t('{count} 秒视频', { count: project.creative.video.duration }) : t('{count} 张成品', { count: outputCount }) }}</span><strong v-if="estimate">{{ estimate.estimated ? t('预计 {count} 积分', { count: estimate.credits }) : t('{count} 积分', { count: estimate.credits }) }}</strong><span v-else-if="estimating">{{ t('计算费用中') }}</span></div>
-          <p v-if="estimateError" class="estimate-error">{{ estimateError }}</p><p v-if="estimate?.estimated" class="settlement-note">{{ t('按实际用量结算') }}</p>
-          <el-button class="generate-button" size="large" type="primary" :icon="resolveIcon('MagicStick')" :loading="busy || storyWorking || copyBusy" :disabled="loading || uploadsBusy || storyWorking || copyBusy || (goal === 'video' ? !hasTextModel || !project.product.uploads.length : estimating || !estimate) || !!saveError" @click="attempt(generateMain)">{{ goal === 'video' ? ['ready','confirmed'].includes(videoStage) ? t('满意，生成视频') : t('完善视频方案') : t('生成{content}', { content: t(selectedGoal.label) }) }}</el-button>
-          <el-button v-if="visibleJobs.length" class="mobile-results-link" link @click="showResults">{{ t('查看成品') }}<el-icon><component :is="resolveIcon('Bottom')" /></el-icon></el-button>
-        </footer>
-      </aside>
-
-      <main ref="resultsPane" class="results-pane">
-        <div class="results-heading"><div><h2>{{ t('商品成品') }}</h2><span v-if="visibleJobs.length">{{ t('{count} 项', { count: visibleJobs.length }) }}</span></div><div class="result-tools"><el-select v-if="outputRuns.length" v-model="selectedRunId" class="batch-select" :aria-label="t('生成批次')"><el-option v-for="run in outputRuns" :key="run.id" :value="run.id" :label="`${run.create_time.slice(5,16)} / ${run.snapshot.items.length}`" /></el-select><el-button :icon="resolveIcon('Refresh')" :aria-label="t('刷新')" :title="t('刷新')" @click="attempt(work.refresh)" /></div></div>
-        <div v-if="visibleJobs.length" class="output-toolbar"><div class="batch-status"><span v-if="activeJobs.length" class="activity-dot" /><span>{{ activeJobs.length ? t('已完成 {done} / {total}', { done: successfulJobs.length, total: visibleJobs.length }) : t('{count} 项已完成', { count: successfulJobs.length }) }}</span><template v-if="hasActiveRun"><el-button link :icon="resolveIcon(selectedRun?.paused ? 'VideoPlay' : 'VideoPause')" @click="attempt(() => control(selectedRun?.paused ? 'resume' : 'pause'))">{{ selectedRun?.paused ? t('继续制作') : t('暂停后续') }}</el-button><el-button link :icon="resolveIcon('Close')" :title="t('取消未提交项')" :aria-label="t('取消未提交项')" @click="attempt(() => control('cancel'))" /></template></div><div class="download-actions"><el-button v-if="detailCampaigns.length" :icon="resolveIcon('Download')" @click="attempt(openLongImage)">{{ t('详情长图') }}</el-button><el-button :icon="resolveIcon('Download')" :disabled="!successfulJobs.length" :loading="downloadBusy" @click="attempt(downloadAll)">{{ t('打包下载') }}</el-button></div></div>
-        <div v-if="removed" class="undo-bar" role="status"><span>{{ t('成品已删除') }}</span><el-button link :disabled="deleting" @click="attempt(undoRemove)">{{ t('撤销') }}</el-button></div>
-        <div v-if="!visibleJobs.length" class="output-empty">
-          <div v-if="productImage" class="source-preview"><PosterImage :src="productImage.src" :poster="copyOverlayApplicable && project.creative.copy.enabled && project.creative.copy.headline.trim() ? { ...project.creative.copy, presetId: project.creative.presetId } : null" :alt="productImage.name" large /><span>{{ copyOverlayApplicable && project.creative.copy.enabled && project.creative.copy.headline.trim() ? t('文案预览') : t('商品参考') }}</span></div>
-          <div v-else class="empty-silhouette"><el-icon :size="70"><component :is="resolveIcon('Goods')" /></el-icon></div>
-          <h3>{{ t(selectedGoal.label) }}</h3><div class="planned-output"><span>{{ goal === 'video' ? t('{count} 秒', { count: project.creative.video.duration }) : t('{count} 张', { count: outputCount }) }}</span><span>{{ goal === 'video' ? project.creative.video.aspect_ratio : style.name }}</span><span>{{ t('待制作') }}</span></div>
-        </div>
-        <div v-else class="job-grid"><article v-for="job in visibleJobs" :key="job.id" class="job-tile" :class="job.status">
-          <button type="button" class="job-preview" :disabled="job.status !== 'success'" :aria-label="t('预览{title}', { title: job.title })" @click="job.mode === 'video' ? videoPreview = job : posterPreview = { src: job.result_url, poster: jobPoster(job), name: job.title }"><PosterImage v-if="job.status === 'success' && job.mode === 'image'" :src="job.result_url" :poster="jobPoster(job)" :alt="job.title" /><video v-else-if="job.status === 'success'" :src="job.result_url" preload="metadata" /><div v-else class="job-placeholder"><el-icon :size="26" :class="{ 'is-loading': isGenerating(job) }"><component :is="resolveIcon(isGenerating(job) ? 'Loading' : job.status === 'failed' || job.status === 'unknown' ? 'Warning' : 'Clock')" /></el-icon><span>{{ statusText(job) }}</span></div><span v-if="job.mode === 'video' && job.status === 'success'" class="video-play"><el-icon :size="30"><component :is="resolveIcon('VideoPlay')" /></el-icon></span></button>
-          <el-button v-if="['success','failed','cancelled'].includes(job.status)" class="delete-result" :icon="resolveIcon('Delete')" :title="t('删除成品')" :aria-label="t('删除成品')" :disabled="deleting || !!saveError" @click="attempt(() => removeJob(job))" />
-          <div class="job-info"><strong>{{ job.title }}</strong><small>{{ statusText(job) }}</small></div><p v-if="job.error_message" class="job-error">{{ job.error_message }}</p>
-          <div class="job-actions">
-            <template v-if="job.status === 'success'"><el-button v-if="job.mode === 'image'" :icon="resolveIcon('EditPen')" @click="startEdit(job.kind, jobResult(job)!)">{{ t('改图') }}</el-button><el-button v-if="job.mode === 'image' && job.page_key !== 'H1' && !templateJob(job)" :icon="resolveIcon('Document')" :title="t('改文案')" :aria-label="t('改文案')" @click="openCopyEditor(job)" /><el-button :icon="resolveIcon('Download')" :title="t('下载')" :aria-label="t('下载')" @click="attempt(() => downloadJob(job))" /><el-button v-if="job.mode === 'image'" :icon="resolveIcon('FolderAdd')" :title="t('保存至资产')" :aria-label="t('保存至资产')" :loading="savingAssets.includes(job.id)" :disabled="assetSaved(job)" @click="attempt(() => saveAsset(job))" /></template>
-            <el-button v-if="job.status === 'unknown' || job.status === 'failed'" size="small" @click="attempt(async () => work.integrate(await ecommerce.check(job.id)))">{{ t('核对原任务') }}</el-button>
-            <el-dropdown v-if="['success','failed'].includes(job.status)" trigger="click"><el-button :icon="resolveIcon('MoreFilled')" :title="t('更多操作')" :aria-label="t('更多操作')" /><template #dropdown><el-dropdown-menu><el-dropdown-item :icon="resolveIcon('RefreshRight')" @click="attempt(() => retry(job))">{{ t('重新生成') }}</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
-          </div>
-        </article></div>
-      </main>
-    </div>
-
-    <input ref="productInput" data-testid="product-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="event => readFiles(event, 'product')" />
-    <input ref="referenceInput" data-testid="reference-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="event => readFiles(event, referenceKind)" />
-    <input ref="importInput" type="file" accept="application/json,.json" hidden @change="event => attempt(() => importProject(event))" />
-
-    <Teleport v-if="advancedOpen" to="#ecommerce-inline-settings"><section class="inline-settings" :aria-label="t('制作设置')">
+<section v-if="advancedOpen" class="inline-settings" :aria-label="t('制作设置')">
       <div class="advanced-settings">
-        <section v-if="goal !== 'video'" class="settings-group"><el-form label-position="top"><el-form-item :label="t('图片用途')"><el-select v-model="goal" :aria-label="t('图片用途')"><el-option v-for="option in imageGoals" :key="option.id" :value="option.id" :label="t(option.label)" /></el-select></el-form-item></el-form></section>
-        <section v-if="goal !== 'video' && goal !== 'detail'" class="settings-group style-section"><div class="section-heading"><h2>{{ t('图片风格') }}</h2></div><button type="button" class="selected-style" @click="styleOpen = true"><img :src="style.cover" :alt="style.name" /><span><strong>{{ style.name }}</strong><small>{{ style.description }}</small></span><el-icon><component :is="resolveIcon('ArrowRight')" /></el-icon></button></section>
-        <details class="settings-disclosure settings-group output-settings">
+
+        <section v-if="goal !== 'video' && goal !== 'detail'" class="settings-group style-section"><div class="section-heading"><h2>{{ t('图片风格') }}</h2></div><button type="button" class="selected-style" @click="styleOpen = true"><img :src="style.cover" :alt="t(style.name)" /><span><strong>{{ t(style.name) }}</strong><small>{{ t(style.description || '') }}</small></span><el-icon><component :is="resolveIcon('ArrowRight')" /></el-icon></button></section>
+        <details open class="settings-disclosure settings-group output-settings">
           <summary><el-icon class="disclosure-caret"><component :is="resolveIcon('ArrowRight')" /></el-icon><strong>{{ t('输出规格') }}</strong><span>{{ goal === 'video' ? t('{count} 秒', { count: project.creative.video.duration }) : t('{count} 张', { count: outputCount }) }}</span></summary>
           <el-form label-position="top">
             <template v-if="goal !== 'video'">
@@ -614,7 +620,7 @@ async function deleteProject() {
             <el-switch v-model="project.creative.useScene" :aria-label="t('使用场景参考')" />
           </div>
           <div v-if="project.creative.useScene" class="reference-setting-body scene-reference-body">
-            <div class="scene-grid"><button v-for="preset in SCENE_PRESETS" :key="preset.id" type="button" :class="{ selected: project.scene.source === 'presets' && preset.id === project.scene.presetId }" @click="selectScene(preset.id)"><img :src="preset.cover" :alt="preset.name" /><span>{{ preset.name }}</span><el-icon v-if="project.scene.source === 'presets' && preset.id === project.scene.presetId" class="scene-check"><component :is="resolveIcon('CircleCheckFilled')" /></el-icon></button></div>
+            <div class="scene-grid"><button v-for="preset in availableScenes" :key="preset.id" type="button" :class="{ selected: project.scene.source === 'presets' && preset.id === project.scene.presetId }" @click="selectScene(preset.id)"><img :src="preset.cover" :alt="t(preset.name)" @error="unavailableSceneIds.push(preset.id)" /><span>{{ t(preset.name) }}</span><el-icon v-if="project.scene.source === 'presets' && preset.id === project.scene.presetId" class="scene-check"><component :is="resolveIcon('CircleCheckFilled')" /></el-icon></button></div>
             <div class="reference-actions"><el-button :icon="resolveIcon('Upload')" @click="chooseReference('scene')">{{ t('上传场景') }}</el-button><el-button :icon="resolveIcon('FolderOpened')" @click="attempt(() => openAssets('scene'))">{{ t('我的资产') }}</el-button></div>
             <MediaStrip v-if="project.scene.uploads.length" :items="project.scene.uploads" removable :selected-id="project.scene.selectedUploadId" @select="item => selectUpload('scene', item)" @remove="mediaId => removeUpload('scene', mediaId)" />
             <MediaStrip v-if="project.scene.results.length" :items="project.scene.results" :selected-id="project.scene.activeResultId" @select="item => selectReferenceResult('scene', item)" @preview="item => fullPreview = item" />
@@ -623,20 +629,32 @@ async function deleteProject() {
           </div>
         </details>
 
-        <details class="settings-disclosure settings-group product-processing">
-          <summary><el-icon class="disclosure-caret"><component :is="resolveIcon('ArrowRight')" /></el-icon><strong>{{ t('商品细节与处理') }}</strong></summary>
-          <el-form label-position="top"><el-form-item :label="t('商品名称')"><el-input v-model="project.product.config.name" maxlength="120" :aria-label="t('商品名称')" @change="renameProduct" /></el-form-item><el-form-item :label="t('商品资料')"><el-input v-model="project.product.config.notes" type="textarea" :rows="2" maxlength="4000" :aria-label="t('商品资料')" /></el-form-item><div class="form-pair"><el-form-item v-for="(options, key) in PRODUCT_OPTIONS" :key="key" :label="labels[key]"><el-select v-model="project.product.config[key as 'category' | 'presentation']"><el-option v-for="option in options" :key="option.value" :value="option.value" :label="option.label" /></el-select></el-form-item></div></el-form>
-          <div class="reference-actions"><el-button :icon="resolveIcon('Aim')" :disabled="!productImage" @click="openMarker">{{ t('标记商品') }}</el-button><el-button :icon="resolveIcon('MagicStick')" :disabled="!project.product.uploads.length" :loading="busy" @click="attempt(() => prepare(work.build('product')))">{{ t('提取干净商品图') }}</el-button></div>
-          <el-checkbox v-if="project.product.results.length" v-model="project.integration!.useProcessedProduct">{{ t('使用处理后的商品图') }}</el-checkbox>
-          <MediaStrip v-if="project.product.results.length" :items="project.product.results" :selected-id="project.product.activeResultId" @select="item => selectReferenceResult('product', item)" @preview="item => fullPreview = item" />
-          <ReferenceJobs :jobs="jobs" kind="product" :busy="busy" @check="job => attempt(() => checkOriginal(job))" @retry="job => attempt(() => retry(job))" />
-        </details>
       </div>
       <div class="settings-footer"><el-button link :icon="resolveIcon('ArrowUp')" @click="advancedOpen = false">{{ t('收起配置') }}</el-button></div>
-    </section></Teleport>
-    <el-dialog :model-value="!!copyEditorJob" :title="t('修改文案')" width="760px" class="ecommerce-dialog" append-to-body @close="copyEditorJob = null"><div v-if="copyEditorJob && editedPoster" class="poster-editor"><div class="poster-editor-preview"><PosterImage :src="copyEditorJob.result_url" :poster="editedPoster.headline.trim() ? editedPoster : null" :alt="copyEditorJob.title" large /></div><el-form label-position="top"><el-form-item :label="t('宣传标题')"><el-input v-model="editedPoster.headline" maxlength="20" :aria-label="t('成品标题')" /></el-form-item><el-form-item :label="t('宣传副标题')"><el-input v-model="editedPoster.subtitle" maxlength="40" :aria-label="t('成品副标题')" /></el-form-item><el-form-item v-for="(_, index) in editedPoster.sellingPoints" :key="index" :label="t('卖点 {count}', { count: index + 1 })"><el-input v-model="editedPoster.sellingPoints[index]" maxlength="16" /></el-form-item></el-form></div><template #footer><el-button @click="attempt(() => savePosterCopy(true))">{{ t('去掉文字') }}</el-button><el-button type="primary" :disabled="!editedPoster?.headline.trim()" @click="attempt(() => savePosterCopy())">{{ t('保存文案') }}</el-button></template></el-dialog>
+    </section>
+        </div>
+        <footer class="creation-footer">
+          <div class="creation-summary"><span>{{ goal === 'video' ? t('{count} 秒视频', { count: project.creative.video.duration }) : t('{count} 张成品', { count: outputCount }) }}</span><strong v-if="estimate">{{ estimate.estimated ? t('预计 {count} 积分', { count: estimate.credits }) : t('{count} 积分', { count: estimate.credits }) }}</strong><span v-else-if="estimating">{{ t('计算费用中') }}</span></div>
+          <p v-if="estimateError" class="estimate-error">{{ estimateError }}</p><p v-if="estimate?.estimated" class="settlement-note">{{ t('按实际用量结算') }}</p>
+            <el-button class="generate-button" size="large" type="primary" :icon="resolveIcon('MagicStick')" :loading="busy || storyWorking || copyBusy" :disabled="loading || uploadsBusy || storyWorking || copyBusy || (goal === 'video' ? !hasTextModel || !project.product.uploads.length : estimating || !estimate) || !!saveError" @click="attempt(generateMain)">{{ goal === 'video' ? ['ready','confirmed'].includes(videoStage) ? t('满意，生成视频') : t('完善视频方案') : t('生成{content}', { content: t(selectedGoal.label) }) }}</el-button>
+          <el-button v-if="visibleJobs.length" class="mobile-results-link" link @click="showResults">{{ t('查看成品') }}<el-icon><component :is="resolveIcon('Bottom')" /></el-icon></el-button>
+        </footer>
+      </aside>
+
+      <div ref="resultsPane" class="results-pane history-results">
+        <div v-if="hasActiveRun" class="timeline-run-bar"><span>{{ t('当前批次') }}</span><el-button link @click="attempt(() => control(selectedRun?.paused ? 'resume' : 'pause'))">{{ selectedRun?.paused ? t('继续制作') : t('暂停后续') }}</el-button><el-button link @click="attempt(() => control('cancel'))">{{ t('取消未提交项') }}</el-button></div>
+        <div v-if="removed" class="undo-bar" role="status"><span>{{ t('成品已删除') }}</span><el-button link :disabled="deleting" @click="attempt(undoRemove)">{{ t('撤销') }}</el-button></div>
+        <GenerationHistory :key="id" :jobs="outputJobs" :product-name="project.product.config.name || project.name" :poster="jobPoster" :busy="busy || uploadsBusy" @retry="job => attempt(() => retry(job))" @reuse="job => attempt(() => historyReuse(job))" @edit="historyEdit" @download="job => attempt(() => downloadJob(job))" @remove="job => attempt(() => removeJob(job))" @check="job => attempt(() => checkOriginal(job))" @save-asset="job => attempt(() => saveAsset(job))" @refresh="attempt(work.refresh)" @download-all="attempt(downloadAll)" @preview="job => job.mode === 'video' ? videoPreview = job : posterPreview = { src: job.result_url, poster: jobPoster(job), name: job.title }" />
+      </div>
+    </div>
+
+    <input ref="productInput" data-testid="product-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="event => readFiles(event, 'product')" />
+    <input ref="referenceInput" data-testid="reference-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="event => readFiles(event, referenceKind)" />
+    <input ref="importInput" type="file" accept="application/json,.json" hidden @change="event => attempt(() => importProject(event))" />
+
+    <el-dialog :model-value="!!copyEditorJob" :title="t('修改文案')" width="760px" class="ecommerce-dialog" append-to-body @close="copyEditorJob = null"><div v-if="copyEditorJob && editedPoster" class="poster-editor"><div class="poster-editor-preview"><PosterImage :src="copyEditorJob.result_url" :poster="editedPoster.headline.trim() || editedPoster.subtitle.trim() || editedPoster.sellingPoints.length || Object.values(editedPoster.facts || {}).some(value => value.trim()) ? editedPoster : null" :alt="copyEditorJob.title" large /></div><el-form label-position="top"><el-form-item :label="t('宣传标题')"><el-input v-model="editedPoster.headline" maxlength="20" :aria-label="t('成品标题')" /></el-form-item><el-form-item :label="t('宣传副标题')"><el-input v-model="editedPoster.subtitle" maxlength="40" :aria-label="t('成品副标题')" /></el-form-item><el-form-item v-for="(_, index) in editedPoster.sellingPoints" :key="index" :label="t('卖点 {count}', { count: index + 1 })"><el-input v-model="editedPoster.sellingPoints[index]" maxlength="16" /></el-form-item><el-divider content-position="left">{{ t('商品信息') }}</el-divider><div class="copy-facts-grid"><el-input v-model="editedPoster.facts!.price" maxlength="20" :placeholder="t('到手价')" /><el-input v-model="editedPoster.facts!.originalPrice" maxlength="20" :placeholder="t('原价')" /><el-input v-model="editedPoster.facts!.discount" maxlength="16" :placeholder="t('折扣')" /><el-input v-model="editedPoster.facts!.certification" maxlength="24" :placeholder="t('认证')" /><el-input v-model="editedPoster.facts!.sales" maxlength="24" :placeholder="t('销量')" /><el-input v-model="editedPoster.facts!.cta" maxlength="16" :placeholder="t('行动按钮')" /></div></el-form></div><template #footer><el-button @click="attempt(() => savePosterCopy(true))">{{ t('去掉文字') }}</el-button><el-button type="primary" :disabled="!editedPoster || (!editedPoster.headline.trim() && !editedPoster.subtitle.trim() && !editedPoster.sellingPoints.length && !Object.values(editedPoster.facts || {}).some(value => value.trim()))" @click="attempt(() => savePosterCopy())">{{ t('保存文案') }}</el-button></template></el-dialog>
     <el-dialog :model-value="!!posterPreview" :title="posterPreview?.name" width="1000px" class="ecommerce-dialog" append-to-body @close="posterPreview = null"><div v-if="posterPreview" class="poster-full-preview"><PosterImage :src="posterPreview.src" :poster="posterPreview.poster" :alt="posterPreview.name" large /></div></el-dialog>
-    <el-dialog v-model="styleOpen" :title="goal === 'detail' ? t('选择详情模板') : `${t(selectedGoal.label)} · ${t('图片风格')}`" width="900px" class="ecommerce-dialog" append-to-body><div class="style-filters"><el-radio-group v-model="styleCategory" size="small"><el-radio-button v-for="category in styleCategories" :key="category" :value="category">{{ t(category) }}</el-radio-button></el-radio-group></div><div class="style-gallery"><button v-for="preset in visibleStyles" :key="preset.id" type="button" :class="{ selected: preset.id === project.creative.presetId }" @click="selectStorefrontStyle(project, preset.id); styleOpen = false"><img :src="preset.cover" :alt="preset.name" /><strong>{{ preset.name }}</strong><small>{{ preset.description }}</small><el-icon v-if="preset.id === project.creative.presetId"><component :is="resolveIcon('CircleCheckFilled')" /></el-icon></button></div></el-dialog>
+    <el-dialog v-model="styleOpen" :title="goal === 'detail' ? t('选择详情模板') : `${t(selectedGoal.label)} · ${t('图片风格')}`" width="900px" class="ecommerce-dialog" append-to-body><div class="style-filters"><el-radio-group v-model="styleCategory" size="small"><el-radio-button v-for="category in styleCategories" :key="category" :value="category">{{ t(category) }}</el-radio-button></el-radio-group></div><div class="style-gallery"><button v-for="preset in visibleStyles" :key="preset.id" type="button" :class="{ selected: preset.id === project.creative.presetId }" @click="selectStorefrontStyle(project, preset.id); styleOpen = false"><img :src="preset.cover" :alt="t(preset.name)" /><strong>{{ t(preset.name) }}</strong><small>{{ t(preset.description || '') }}</small><el-icon v-if="preset.id === project.creative.presetId"><component :is="resolveIcon('CircleCheckFilled')" /></el-icon></button></div></el-dialog>
     <el-dialog v-model="markerOpen" :title="t('标记目标商品')" width="760px" class="ecommerce-dialog" append-to-body destroy-on-close><ProductMarker v-if="markerImage" :image="markerImage" :value="project.product.config.marking" @confirm="value => attempt(() => saveMarking(value))" @cancel="markerOpen = false" /></el-dialog>
     <el-dialog v-model="assetsOpen" :title="t('我的资产')" width="800px" class="ecommerce-dialog" append-to-body><div v-loading="assetsLoading" class="asset-gallery"><template v-for="asset in assets" :key="asset.id"><button v-for="image in asset.images.filter(image => image.url)" :key="image.id" type="button" @click="attempt(() => selectAsset(asset, image.id!))"><img :src="image.url" :alt="asset.name" /><span>{{ asset.name }}</span></button></template><el-empty v-if="!assetsLoading && !assets.some(asset => asset.images.some(image => image.url))" :description="t('暂无可用资产')" /></div></el-dialog>
     <el-dialog :model-value="!!fullPreview" :title="fullPreview?.name" width="1000px" class="ecommerce-dialog" append-to-body @close="fullPreview = null"><img v-if="fullPreview" class="full-preview" :src="fullPreview.src" :alt="fullPreview.name" /></el-dialog>
@@ -719,7 +737,16 @@ h1,h2,h3,p { margin: 0; } h1 { font-size: 21px; font-weight: 600; } h2 { font-si
 .content-mode { display: flex; width: 100%; }
 .content-mode :deep(.el-radio-button) { flex: 1; min-width: 0; }
 .content-mode :deep(.el-radio-button__inner) { display: flex; width: 100%; min-height: 42px; justify-content: center; align-items: center; gap: 8px; padding: 10px 8px; font-size: 13px; }
-.copy-section > .el-input,.copy-points > .el-input { margin-bottom: 9px; }
+.copy-section > .el-input { margin-bottom: 9px; }
+.product-intro-help,.manual-copy-help { margin: 8px 0; font-size: 11px; line-height: 1.6; color: var(--muted); }
+.copy-point { display: flex; gap: 4px; margin-bottom: 9px; }
+.copy-point > .el-input { flex: 1; min-width: 0; }
+.copy-point > .el-button { padding: 6px; }
+.copy-facts { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+.copy-facts-heading { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; font-size: 12px; color: var(--body); }
+.copy-facts-heading small { color: var(--muted); font-size: 10px; }
+.copy-facts-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.copy-facts-grid .el-input { min-width: 0; }
 .copy-action { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .copy-action > span { font-size: 10px; color: var(--muted); }
 .copy-action .el-button { font-size: 12px; }
@@ -746,6 +773,27 @@ h1,h2,h3,p { margin: 0; } h1 { font-size: 21px; font-weight: 600; } h2 { font-si
 @media (max-width: 560px) { h1 { font-size: 19px; }.storefront-header { padding: 16px 14px; }.page-title { gap: 8px; }.save-state { margin-left: 4px; }.project-controls { width: 100%; }.project-controls .el-select { flex: 1; width: 100px; }.project-controls > .el-button { padding: 8px 10px; }.creation-fields { padding: 20px 14px 0; }.creation-footer { padding: 15px 14px 18px; }.results-pane { padding: 20px 14px 28px; }.goal-options { grid-template-columns: repeat(2,minmax(0,1fr)); }.goal-options :deep(.el-radio-button__inner) { height: 46px; }.results-heading { gap: 8px; flex-wrap: wrap; }.batch-select { width: 138px; }.job-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }.job-info { display: block; padding: 10px 8px 0; }.job-info small { display: block; margin-top: 3px; }.job-actions { gap: 5px; padding: 9px 8px; }.job-actions .el-button { padding: 6px; font-size: 11px; }.output-toolbar { gap: 10px; }.download-actions { width: 100%; }.download-actions .el-button { padding: 8px 10px; font-size: 12px; }.style-gallery { grid-template-columns: repeat(2,minmax(0,1fr)); }.scene-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }.page-selection { grid-template-columns: 1fr; }.quote-page { align-items: flex-start; flex-direction: column; gap: 6px; } }
 @media (max-width: 900px) { .storefront-workspace { scrollbar-gutter: stable; }.creation-fields { scrollbar-gutter: auto; } }
 @media (prefers-reduced-motion: reduce) { .storefront * { scroll-behavior: auto; } }
+
+/* Product workbench: fixed configuration column, chronological records, contextual details. */
+.storefront { --canvas: #06101e; --surface-soft: #0d1c31; --surface-card: #0d1c31; --hairline: #1b3150; --muted: #7b9bc3; --body: #dce9fc; background: radial-gradient(ellipse at 70% 20%,#0c203a55,transparent 65%),#06101e; }
+.storefront :deep(.el-button) { border-radius: 7px; font-weight: 500; transition: color .16s ease, border-color .16s ease, background .16s ease, transform .16s ease; }
+.storefront :deep(.el-button:not(.is-link):not(.is-text):not(.is-disabled)):hover { transform: translateY(-1px); }
+.storefront :deep(.el-button.is-link) { color: #8eafd8; }
+.storefront :deep(.el-button.is-link:hover) { color: #d8e8ff; background: rgba(79,137,214,.12); }
+.storefront .copy-draft-button { min-height: 30px; padding: 6px 10px; border: 1px solid #284568; color: #a8c8f2; background: #0e2139; font-size: 11px; }
+.storefront .copy-draft-button:hover { border-color: #3b74ad; color: #e3efff; background: #132d4b; }
+.storefront .generate-button { border: 1px solid #6576ff; border-radius: 9px; box-shadow: 0 8px 22px rgba(42,73,255,.22); letter-spacing: .01em; }
+.storefront .generate-button:hover { box-shadow: 0 10px 28px rgba(42,73,255,.34); }
+.storefront .reference-actions :deep(.el-button) { min-height: 32px; padding: 7px 11px; border: 1px solid #274565; color: #a8c8eb; background: #0c1c31; }
+.storefront .reference-actions :deep(.el-button:hover) { border-color: #3f83c3; color: #e6f1ff; background: #112943; }
+.storefront .download-actions :deep(.el-button),.storefront .history-download :deep(.el-button) { min-height: 32px; padding: 7px 12px; border: 1px solid #2a486d; border-radius: 7px; color: #a9c9ef; background: #0c1b2f; }
+.storefront .download-actions :deep(.el-button:hover),.storefront .history-download :deep(.el-button:hover) { color: #f0f7ff; border-color: #4c87c5; background: #132b48; }
+.storefront-header { padding: 11px 18px; min-height: 34px; background: #071221; border-bottom-color: #1d3555; }
+.page-title { gap: 10px; }.page-title h1 { font-size: 14px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.page-title .el-button { font-size: 12px; color: #97b9e3; padding-left: 0; }.breadcrumb-slash { color: #36516e; }
+.storefront-workspace { grid-template-columns: 320px minmax(0,1fr); }.creation-pane { border-right-color: #2a4568; background: linear-gradient(110deg,#071424,#081322); }.creation-fields { padding: 18px 17px 0; }.creation-panel-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }.creation-panel-heading h2 { font-size: 16px; }.creation-panel-heading > .el-icon { color: #7197ca; }.section-heading { margin-bottom: 8px; }.section-heading h2 { font-size: 12px; font-weight: 500; color: #c3d8f4; }.creation-fields section + section { margin-top: 18px; }.creation-footer { padding: 12px 17px 16px; background: #081322; }.product-name-input { margin: 10px 0 14px; }.primary-purpose { margin-top: 12px; }.primary-purpose :deep(.el-form-item) { margin-bottom: 0; }.primary-purpose :deep(.el-form-item__label) { padding-bottom: 6px; font-size: 12px; color: #c3d8f4; }.primary-purpose :deep(.el-select) { width: 100%; }.creation-fields :deep(.el-input__wrapper),.creation-fields :deep(.el-textarea__inner),.creation-fields :deep(.el-select__wrapper) { background: linear-gradient(115deg,#0b192c,#10213a); box-shadow: 0 0 0 1px #223b5d inset; }.content-mode :deep(.el-radio-button__inner) { min-height: 36px; font-size: 12px; background: #0b1a2d; }.content-mode :deep(.el-radio-button.is-active .el-radio-button__inner) { background: linear-gradient(110deg,#315bff,#5551ff); }.generate-button { height: 40px; background: linear-gradient(110deg,#3758ff,#5850ff); border-color: #5663ff; }.product-dropzone :deep(.media-name) { font-size: 10px; }.requirements-section :deep(.el-textarea__inner) { font-size: 12px; line-height: 21px; }.results-pane.history-results { padding: 0; overflow: hidden; min-height: 0; display: flex; flex-direction: column; }.history-results > :deep(.history-workspace) { flex: 1; min-height: 0; }.timeline-run-bar { padding: 8px 20px; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #1a2d47; font-size: 11px; color: var(--muted); }.timeline-run-bar .el-button { font-size: 11px; }.project-controls { width: auto; }.history-results .undo-bar { margin: 8px 16px; }
+@media (min-width: 1700px) { .storefront-workspace { grid-template-columns: 350px minmax(0,1fr); } }
+@media (max-width: 1200px) { .storefront-workspace { grid-template-columns: 290px minmax(0,1fr); } }
+@media (max-width: 900px) { .storefront-workspace { display: block; }.results-pane.history-results { overflow: visible; }.creation-fields { padding: 18px 16px 0; }.creation-footer { padding: 14px 16px; }.storefront-header { flex-wrap: nowrap; }.page-title { min-width: 0; gap: 6px; }.page-title h1 { max-width: 145px; font-size: 12px; }.save-state { display: none; }.project-controls { margin-left: 0; }.history-results > :deep(.history-workspace) { min-height: 500px; }.product-dropzone :deep(.media-strip) { grid-template-columns: repeat(auto-fill,minmax(85px,1fr)); } }
 </style>
 
 <style>

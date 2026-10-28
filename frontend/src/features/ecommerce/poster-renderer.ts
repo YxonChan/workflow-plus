@@ -33,6 +33,12 @@ export async function renderPoster(src: string, value: Poster, maxWidth = 2048):
   const context = canvas.getContext('2d')
   if (!context) throw new Error('当前浏览器无法生成宣传图')
   const palette = campaignStyle(poster.presetId, 'facts').palette
+  const facts = poster.facts || { price: '', originalPrice: '', discount: '', certification: '', sales: '', cta: '' }
+  const factLines = [facts.price, facts.originalPrice, facts.discount, facts.certification, facts.sales, facts.cta].filter(Boolean)
+  const detailLines = poster.sellingPoints
+  // Facts are user-confirmed claims and are rendered after generation. Keep
+  // them in a compact block so prices and trust badges do not look like AI copy.
+  const factText = factLines.join('  ·  ')
   const margin = width * .065, available = width - margin * 2
   context.fillStyle = palette[0]; context.fillRect(0, 0, width, height)
   const photo = (x: number, y: number, boxWidth: number, boxHeight: number) => {
@@ -46,7 +52,7 @@ export async function renderPoster(src: string, value: Poster, maxWidth = 2048):
     photo(column, 0, width - column, height)
     const title = fit(context, poster.headline, textWidth, Math.round(width * .048), 4, 700), titleFont = context.font
     const subtitle = fit(context, poster.subtitle, textWidth, Math.round(width * .025), 4), subtitleFont = context.font
-    const points = fit(context, poster.sellingPoints.join(' / '), textWidth, Math.round(width * .023), 6), pointsFont = context.font
+    const points = fit(context, [...detailLines, factText].filter(Boolean).join(' / '), textWidth, Math.round(width * .023), 6), pointsFont = context.font
     const gap = width * .025
     const total = title.height + subtitle.height + points.height + gap * 2
     let y = Math.max(margin, (height - total) / 2)
@@ -66,7 +72,7 @@ export async function renderPoster(src: string, value: Poster, maxWidth = 2048):
   const subtitleFont = context.font
   const textBottom = margin * .75 + title.height + (subtitle.lines.length ? width * .018 + subtitle.height : 0)
   const header = Math.max(height * .20, textBottom + margin * .45)
-  const footer = poster.sellingPoints.length ? height * .10 : 0
+  const footer = detailLines.length || factLines.length ? Math.min(height * .22, height * (.10 + (factLines.length ? .055 : 0))) : 0
   const imageHeight = height - header - footer
   if (poster.layout === 'footer') {
     const band = header + footer, start = height - band
@@ -78,8 +84,8 @@ export async function renderPoster(src: string, value: Poster, maxWidth = 2048):
     for (const line of title.lines) { context.fillText(line, margin, y); y += title.size * 1.35 }
     y += width * .018; context.font = subtitleFont
     for (const line of subtitle.lines) { context.fillText(line, margin, y); y += subtitle.size * 1.35 }
-    if (poster.sellingPoints.length) {
-      const points = fit(context, poster.sellingPoints.join('  /  '), available, Math.round(width * .024), 2)
+    if (detailLines.length || factLines.length) {
+      const points = fit(context, [...detailLines, factText].filter(Boolean).join('  /  '), available, Math.round(width * .024), 3)
       y = height - footer + (footer - points.height) / 2
       for (const line of points.lines) { context.fillText(line, margin, y); y += points.size * 1.35 }
     }
@@ -95,7 +101,7 @@ export async function renderPoster(src: string, value: Poster, maxWidth = 2048):
   for (const line of subtitle.lines) { context.fillText(line, margin, y); y += subtitle.size * 1.35 }
   if (footer) {
     context.fillStyle = palette[1]; context.fillRect(0, height - footer, width, footer)
-    const points = fit(context, poster.sellingPoints.join('  /  '), available, Math.round(width * .024), 2)
+    const points = fit(context, [...detailLines, factText].filter(Boolean).join('  /  '), available, Math.round(width * .024), 3)
     context.fillStyle = palette[2]; y = height - footer + (footer - points.height) / 2
     for (const line of points.lines) { context.fillText(line, margin, y); y += points.size * 1.35 }
   }
