@@ -135,12 +135,26 @@
     "poster-hero": {
       "purposes": [
         "poster"
-      ]
+      ],
+      "palette": [
+        "#FFF4EC",
+        "#F5D8C7",
+        "#3E2A24",
+        "#C86B4A"
+      ],
+      "lighting": "温暖商业柔光从左上照射，保留商品真实材质与柔和接触阴影"
     },
     "poster-tech": {
       "purposes": [
         "poster"
-      ]
+      ],
+      "palette": [
+        "#182433",
+        "#283B52",
+        "#EDF4FA",
+        "#73B4D0"
+      ],
+      "lighting": "冷色定向轮廓光与前方柔和补光，清晰呈现商品外形与真实细节"
     },
     "warm-living": {
       "enabled": false,

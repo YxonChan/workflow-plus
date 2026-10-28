@@ -238,6 +238,16 @@ test('template pack is ready for supplied images but unavailable templates canno
   }
 })
 
+test('poster styles include palettes required by client-side copy rendering', () => {
+  const posters = stylesForPurpose('poster')
+  assert.deepEqual(posters.map(style => style.id), ['poster-hero', 'poster-tech'])
+  for (const poster of posters) {
+    assert.equal(poster.palette.length, 4, poster.id + ': poster palette must have four colors')
+    assert.equal(typeof poster.lighting, 'string')
+    assert.equal(campaignStyle(poster.id, 'facts').palette.length, 4)
+  }
+})
+
 test('catalog names, categories and descriptions all have English mappings', () => {
   const locale = readFileSync(new URL('../src/i18n/locales/ecommerceStyles.ts', import.meta.url), 'utf8').split('export const ecommerceStyleEn = ')[1]
   const keys = new Set([...locale.matchAll(/^  (".*"): /gm)].map(match => JSON.parse(match[1])))
