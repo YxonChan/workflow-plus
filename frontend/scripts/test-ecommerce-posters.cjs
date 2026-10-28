@@ -93,7 +93,7 @@ async function main() {
         await page.screenshot({ path: path.join(output, `${width}-${job.title}-preview.png`), animations: 'disabled' })
         await page.keyboard.press('Escape')
         await page.locator('.poster-full-preview').waitFor({ state: 'hidden' })
-        if (width === 390) await page.getByRole('button', { name: '关闭作品详情', exact: true }).click()
+        if (width === 390) { await page.keyboard.press('Escape'); await page.locator('.artwork-details').waitFor({ state: 'hidden' }) }
       }
       await page.reload()
       await composed('.history-thumbnail img')

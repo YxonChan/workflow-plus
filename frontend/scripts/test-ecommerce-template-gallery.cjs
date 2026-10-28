@@ -100,7 +100,7 @@ async function main() {
       assert((await page.locator('.selected-style img').getAttribute('src')).endsWith('/detail-brand-minimal.jpg'), 'reusing an old configuration selects the new default')
       await page.getByRole('button', { name: '改图', exact: true }).click()
       // The existing mobile history sheet stacks above dialogs; close it before editing.
-      if (width === 390) await page.getByRole('button', { name: '关闭作品详情', exact: true }).click()
+      if (width === 390) await page.getByRole('dialog', { name: '作品详情', exact: true }).getByRole('button', { name: '关闭作品详情', exact: true }).click()
       await page.getByPlaceholder('描述需要修改的内容', { exact: true }).fill('光线柔和一些')
       await page.getByRole('button', { name: '查看修改费用', exact: true }).click()
       await page.getByRole('dialog', { name: '确认生成', exact: true }).waitFor()

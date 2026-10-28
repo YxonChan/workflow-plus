@@ -56,6 +56,7 @@ async function main() {
       await page.getByRole('heading', { name: '生成记录', exact: true }).waitFor()
       await page.waitForFunction(() => document.querySelectorAll('.history-item').length === 3).catch(async reason => { console.error(errors, await page.locator('body').innerText()); throw reason })
       assert.match(page.url(), /ecommerce-box\/product\/1$/)
+      assert.equal(await page.locator('.artwork-details').count(), 0, 'details drawer is closed on first load')
       console.log(await page.locator('.ecommerce-box').evaluate(el => { const c = el.__vueParentComponent; return { loading: c?.setupState.loading, workLoading: c?.setupState.work?.loading, advanced: c?.setupState.advancedOpen } }))
       assert.equal(await page.locator('.history-item').count(), 3, 'all batches visible')
       assert.match(await page.locator('.history-item').first().innerText(), /场景视频/)
@@ -76,7 +77,7 @@ async function main() {
       assert.equal(await page.locator('.el-message--error').count(), 0, 'fixture history has valid reference roles for reuse')
       assert.equal(paidSubmits, 0, 'reuse never submits or bills generation')
       if (width > 1200) await page.screenshot({ path: path.join(output, `${width}-workbench.png`), fullPage: true })
-      else { await page.screenshot({ path: path.join(output, `${width}-details.png`), fullPage: true }); await page.getByRole('button', { name: '关闭作品详情', exact: true }).click(); await page.screenshot({ path: path.join(output, `${width}-workbench.png`), fullPage: true }) }
+      else { await page.screenshot({ path: path.join(output, `${width}-details.png`), fullPage: true }); await page.getByRole('dialog', { name: '作品详情', exact: true }).getByRole('button', { name: '关闭作品详情', exact: true }).click(); await page.screenshot({ path: path.join(output, `${width}-workbench.png`), fullPage: true }) }
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal page overflow')
       await page.getByRole('button', { name: '我的商品', exact: true }).evaluate(el => el.click())
       await page.getByRole('heading', { name: '我的商品', exact: true }).waitFor()
